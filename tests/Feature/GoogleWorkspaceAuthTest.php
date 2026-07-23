@@ -89,6 +89,34 @@ class GoogleWorkspaceAuthTest extends TestCase
         ]);
     }
 
+    public function test_request_with_matching_hosted_domain_but_foreign_email_domain_is_denied(): void
+    {
+        $this->mockVerifiedClaims([
+            'email' => 'spoof@evil.com',
+        ]);
+
+        $response = $this->withToken('valid-token')->getJson('/api/me');
+
+        $response->assertForbidden();
+        $this->assertGuest();
+        $this->assertDatabaseHas('auth_audit_logs', [
+            'reason' => AuthFailureReason::OutOfDomain->value,
+            'email' => 'spoof@evil.com',
+        ]);
+    }
+
+    public function test_email_domain_comparison_is_case_insensitive(): void
+    {
+        $this->mockVerifiedClaims([
+            'email' => 'Rider@BloodBikes.Wales',
+        ]);
+
+        $response = $this->withToken('valid-token')->getJson('/api/me');
+
+        $response->assertOk();
+        $this->assertAuthenticated();
+    }
+
     public function test_valid_token_provisions_a_new_user_and_authenticates(): void
     {
         $this->mockVerifiedClaims();
