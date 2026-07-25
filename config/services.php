@@ -39,5 +39,32 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN'),
     ],
+  
+    'three_rings' => [
+        'base_url' => env('THREE_RINGS_BASE_URL', 'https://www.3r.org.uk'),
+        'key' => env('THREE_RINGS_API_KEY'),
+        'contact_email' => env('THREE_RINGS_CONTACT_EMAIL'),
 
+        /*
+         * Three Rings allows at most 30 requests in any sliding 60-second
+         * window. The limiter uses a fixed window, and two fixed windows can
+         * straddle a sliding one (up to 2N requests), so 15 per fixed window
+         * guarantees the published limit is never exceeded.
+         */
+        'rate_limit' => [
+            'max_attempts' => 15,
+            'decay_seconds' => 60,
+        ],
+
+        /*
+         * Per-endpoint cache lifetimes in seconds. The "fresh" copy is served
+         * without hitting Three Rings; the "stale" copy is only served when
+         * Three Rings is unavailable or the rate limit has been reached.
+         */
+        'cache' => [
+            'volunteers' => ['fresh' => 3600, 'stale' => 86400],
+            'roles' => ['fresh' => 21600, 'stale' => 172800],
+            'shifts' => ['fresh' => 300, 'stale' => 3600],
+        ],
+    ],
 ];

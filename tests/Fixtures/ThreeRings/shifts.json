@@ -1,0 +1,55 @@
+{
+    "shifts": [
+        {
+            "id": 900001,
+            "title": "Night Cover",
+            "start_datetime": "2026-07-24T19:00:00.000Z",
+            "duration": 43200,
+            "minimum_volunteers": 1,
+            "maximum_volunteers": 2,
+            "closed_at": null,
+            "num_volunteers_satisfying": 2,
+            "satisfied": true,
+            "num_volunteers_filling": 2,
+            "full": true,
+            "all_day": false,
+            "created_at": "2026-06-01T10:00:00.000Z",
+            "updated_at": "2026-07-20T08:15:00.000Z",
+            "rota": {"id": 7001, "name": "North Wales", "org": {"id": 42, "name": "Blood Bikes Wales"}},
+            "volunteer_shifts": [
+                {
+                    "id": 800001,
+                    "volunteer": {"id": 100001, "name": "Alex Morgan"},
+                    "put_for_swap_at": null,
+                    "created_at": "2026-07-01T12:00:00.000Z",
+                    "updated_at": "2026-07-01T12:00:00.000Z"
+                },
+                {
+                    "id": 800002,
+                    "volunteer": {"id": 100002, "name": "Bethan Hughes"},
+                    "put_for_swap_at": null,
+                    "created_at": "2026-07-02T09:30:00.000Z",
+                    "updated_at": "2026-07-02T09:30:00.000Z"
+                }
+            ]
+        },
+        {
+            "id": 900002,
+            "title": "Day Cover",
+            "start_datetime": "2026-07-25T07:00:00.000Z",
+            "duration": 43200,
+            "minimum_volunteers": 1,
+            "maximum_volunteers": 1,
+            "closed_at": null,
+            "num_volunteers_satisfying": 0,
+            "satisfied": false,
+            "num_volunteers_filling": 0,
+            "full": false,
+            "all_day": false,
+            "created_at": "2026-06-01T10:00:00.000Z",
+            "updated_at": "2026-06-01T10:00:00.000Z",
+            "rota": {"id": 7002, "name": "South Wales", "org": {"id": 42, "name": "Blood Bikes Wales"}},
+            "volunteer_shifts": []
+        }
+    ]
+}
