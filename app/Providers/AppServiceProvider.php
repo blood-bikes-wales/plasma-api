@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Contracts\GoogleIdTokenVerifier;
+use App\Services\Auth\GoogleApiClientIdTokenVerifier;
 use App\Services\ThreeRings\ThreeRingsClient;
 use App\Services\ThreeRings\ThreeRingsConfig;
+use Google\Client;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Contracts\Foundation\Application;
@@ -18,6 +21,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(GoogleIdTokenVerifier::class, function (): GoogleIdTokenVerifier {
+            return new GoogleApiClientIdTokenVerifier(
+                new Client(['client_id' => config('services.google.client_id')]),
+            );
+        });
+
         $this->app->singleton(ThreeRingsClient::class, function (Application $app): ThreeRingsClient {
             $services = $app->make('config')->get('services.three_rings');
 
