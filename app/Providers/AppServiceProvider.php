@@ -27,7 +27,6 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
-
         $this->app->singleton(ThreeRingsClient::class, function (Application $app): ThreeRingsClient {
             $services = $app->make('config')->get('services.three_rings');
 

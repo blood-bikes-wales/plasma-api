@@ -39,7 +39,7 @@ return [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'allowed_domain' => env('GOOGLE_ALLOWED_DOMAIN'),
     ],
-  
+
     'three_rings' => [
         'base_url' => env('THREE_RINGS_BASE_URL', 'https://www.3r.org.uk'),
         'key' => env('THREE_RINGS_API_KEY'),
