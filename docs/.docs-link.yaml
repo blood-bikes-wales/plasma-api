@@ -1,0 +1,46 @@
+cloudId: "https://bloodbikeswales.atlassian.net"
+spaceId: "~557058fdb7bd6307154e4b8ecf7e4efeeb4be7"
+projectName: "plasma-api"
+docsParentId: "12386307" # Software Documentation folder
+mcpServer: "user-Confluence communication server"
+
+folders:
+  ".":
+    pageId: "12451945"
+    title: "Plasma API"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12451945/Plasma+API"
+  technical:
+    pageId: "12321046"
+    title: "Plasma API Technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321046/Plasma+API+Technical"
+  non-technical:
+    pageId: "12321030"
+    title: "Plasma API Non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321030/Plasma+API+Non-technical"
+
+pages:
+  README.md:
+    pageId: "12386398"
+    title: "Plasma API project documentation"
+    folder: "."
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12386398/Plasma+API+project+documentation"
+  technical/overview.md:
+    pageId: "12321062"
+    title: "Plasma API technical overview"
+    folder: "technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321062/Plasma+API+technical+overview"
+  technical/architecture.md:
+    pageId: "12288048"
+    title: "Plasma API architecture"
+    folder: "technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12288048/Plasma+API+architecture"
+  non-technical/overview.md:
+    pageId: "12288064"
+    title: "Plasma API project overview"
+    folder: "non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12288064/Plasma+API+project+overview"
+  non-technical/glossary.md:
+    pageId: "12386416"
+    title: "Plasma API glossary"
+    folder: "non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12386416/Plasma+API+glossary"
