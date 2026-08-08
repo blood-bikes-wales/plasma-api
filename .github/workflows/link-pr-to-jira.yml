@@ -1,0 +1,133 @@
+name: Link PR to Jira
+
+on:
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  link-pr-to-jira:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract Jira ticket key
+        id: jira
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BRANCH: ${{ github.head_ref }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+        run: |
+          set -euo pipefail
+
+          JIRA_KEY="$(printf "%s" "$PR_TITLE" | sed -nE 's/^\[([A-Z][A-Z0-9]+-[0-9]+)\][[:space:]]*-[[:space:]]*.+/\1/p')"
+
+          if [ -z "$JIRA_KEY" ]; then
+            echo "No Jira key found in PR title or branch."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found Jira key: $JIRA_KEY"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "key=$JIRA_KEY" >> "$GITHUB_OUTPUT"
+          echo "url=${JIRA_BASE_URL}/browse/${JIRA_KEY}" >> "$GITHUB_OUTPUT"
+
+      - name: Link PR on Jira issue
+        if: steps.jira.outputs.found == 'true'
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_KEY: ${{ steps.jira.outputs.key }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          AUTH="$(printf "%s:%s" "$JIRA_EMAIL" "$JIRA_API_TOKEN" | base64 | tr -d '\n')"
+
+          jq -n \
+            --arg globalId "github:${REPOSITORY}:pull:${PR_NUMBER}" \
+            --arg prTitle "PR #${PR_NUMBER}: ${PR_TITLE}" \
+            --arg prUrl "$PR_URL" \
+            --arg repo "$REPOSITORY" \
+            '{
+              globalId: $globalId,
+              application: {
+                type: "com.github",
+                name: "GitHub"
+              },
+              relationship: "pull request",
+              object: {
+                url: $prUrl,
+                title: $prTitle,
+                summary: ("Pull request in " + $repo)
+              }
+            }' > jira-remote-link.json
+
+          curl --fail-with-body -L \
+            -X POST \
+            -H "Authorization: Basic ${AUTH}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json" \
+            --data @jira-remote-link.json \
+            "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_KEY}/remotelink"
+
+      - name: Add or update PR comment with Jira link
+        if: steps.jira.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          JIRA_KEY: ${{ steps.jira.outputs.key }}
+          JIRA_URL: ${{ steps.jira.outputs.url }}
+        run: |
+          set -euo pipefail
+
+          MARKER="<!-- jira-link:${JIRA_KEY} -->"
+          COMMENT_BODY="Linked Jira ticket: [${JIRA_KEY}](${JIRA_URL})
+
+          ${MARKER}"
+
+          COMMENTS_JSON="$(curl --fail-with-body -L \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments")"
+
+          EXISTING_COMMENT_ID="$(echo "$COMMENTS_JSON" | jq -r --arg marker "$MARKER" '.[] | select(.body | contains($marker)) | .id' | head -n1)"
+
+          jq -n --arg body "$COMMENT_BODY" '{ body: $body }' > github-comment.json
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            echo "Updating existing Jira link comment: ${EXISTING_COMMENT_ID}"
+
+            curl --fail-with-body -L \
+              -X PATCH \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              --data @github-comment.json \
+              "https://api.github.com/repos/${REPOSITORY}/issues/comments/${EXISTING_COMMENT_ID}"
+          else
+            echo "Creating new Jira link comment"
+
+            curl --fail-with-body -L \
+              -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              --data @github-comment.json \
+              "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments"
+          fi
