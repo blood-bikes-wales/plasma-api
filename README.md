@@ -18,6 +18,17 @@ dependencies, creates `.env` and an application key if missing, then boots the a
 and runs the database migrations.
 
 The API is then available at `http://localhost` (health check at `/up`, API routes under `/api`).
+
+### SPA / Google auth
+
+Protected routes expect `Authorization: Bearer <Google ID token>` from the Plasma Controller SPA.
+Set the same Web OAuth client ID in `GOOGLE_CLIENT_ID`, restrict Workspace with `GOOGLE_ALLOWED_DOMAIN`,
+and allow the SPA origin(s) via `FRONTEND_URL` (CORS). See `.env.example`.
+
+Create the Web OAuth client in GCP Console (OAuth consent Internal, Web application) and paste
+the client ID into `.env`. Locally you can use the staging client. Set `FRONTEND_URL` to the
+SPA origin(s), comma-separated if needed.
+
 Day-to-day commands run through Sail:
 
 ```sh
