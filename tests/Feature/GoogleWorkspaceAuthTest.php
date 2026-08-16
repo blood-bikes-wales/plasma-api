@@ -7,11 +7,21 @@ use App\Enums\AuthFailureReason;
 use App\Exceptions\Auth\InvalidWorkspaceTokenException;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class GoogleWorkspaceAuthTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'www.3r.org.uk/*' => Http::response(['volunteers' => []]),
+        ]);
+    }
 
     public function test_request_without_token_is_denied_and_audited(): void
     {
