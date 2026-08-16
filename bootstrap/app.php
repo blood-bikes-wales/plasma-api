@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Middleware\AssignRequestId;
+use App\Http\Middleware\AttachUserRoles;
 use App\Http\Middleware\AuthenticateGoogleWorkspace;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -13,8 +15,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Early so auth failures, Three Rings, and access logs share one ID.
+        $middleware->prepend(AssignRequestId::class);
+
         $middleware->alias([
             'auth.google' => AuthenticateGoogleWorkspace::class,
+            'roles' => AttachUserRoles::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

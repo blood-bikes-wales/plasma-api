@@ -10,6 +10,7 @@ use App\Models\User;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\Response;
@@ -31,7 +32,9 @@ class AuthenticateGoogleWorkspace
     public function handle(Request $request, Closure $next): Response
     {
         if ($this->shouldBypassAuthentication()) {
-            Auth::setUser($this->resolveLocalDevelopmentUser());
+            $user = $this->resolveLocalDevelopmentUser();
+            Auth::setUser($user);
+            $this->shareUserContext($user);
 
             return $next($request);
         }
@@ -59,7 +62,14 @@ class AuthenticateGoogleWorkspace
             return $this->deny($request, AuthFailureReason::OutOfDomain, $email, $hostedDomain);
         }
 
-        Auth::setUser($this->provisionUser($claims));
+        $user = $this->provisionUser($claims);
+        Auth::setUser($user);
+        $this->shareUserContext($user);
+
+        Log::channel('auth')->info('Google Workspace authentication succeeded.', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+        ]);
 
         return $next($request);
     }
@@ -156,5 +166,24 @@ class AuthenticateGoogleWorkspace
             AuthFailureReason::EmailNotVerified,
             AuthFailureReason::OutOfDomain => response()->json(['message' => 'Forbidden.'], 403),
         };
+    }
+
+    /**
+     * Attach authenticated identity to shared log / context (never the token).
+     */
+    private function shareUserContext(User $user): void
+    {
+        $context = [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'google_id' => $user->google_id,
+            'is_admin' => (bool) $user->is_admin,
+        ];
+
+        Context::add('user_id', $user->id);
+        Context::add('email', $user->email);
+        Context::add('google_id', $user->google_id);
+        Context::add('is_admin', (bool) $user->is_admin);
+        Log::shareContext($context);
     }
 }
