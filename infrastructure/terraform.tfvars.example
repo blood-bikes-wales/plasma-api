@@ -1,0 +1,6 @@
+# Copy to terraform.tfvars (gitignored) for laptop applies.
+# CI passes these as -var from GitHub Environment secrets.
+
+google_client_id     = "xxxx.apps.googleusercontent.com"
+three_rings_api_key  = ""
+# frontend_url_override = "https://plasma-controller-xxxxx-ew.a.run.app"

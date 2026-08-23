@@ -1,0 +1,12 @@
+project_id              = "plasma-staging-502110"
+region                  = "europe-west2"
+service_name            = "plasma-api"
+artifact_repository_id  = "plasma-api"
+github_repository       = "blood-bikes-wales/plasma-api"
+deletion_protection     = false
+min_instance_count      = 0
+app_env                 = "staging"
+sql_instance_name       = "plasma-api-pg"
+sql_tier                = "db-f1-micro"
+sql_pitr                = false
+sql_deletion_protection = false

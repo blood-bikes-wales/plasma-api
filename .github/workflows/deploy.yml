@@ -1,0 +1,98 @@
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Target environment
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    environment: ${{ inputs.environment }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+      WORKSPACE: ${{ inputs.environment }}
+      REGION: europe-west2
+    defaults:
+      run:
+        working-directory: infrastructure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Configure Artifact Registry Docker auth
+        working-directory: .
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push image
+        working-directory: .
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/plasma-api/plasma-api:${GITHUB_SHA}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+          docker build -t "${IMAGE}" .
+          docker push "${IMAGE}"
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Select workspace
+        run: terraform workspace select "${WORKSPACE}" || terraform workspace new "${WORKSPACE}"
+
+      - name: Terraform apply
+        env:
+          TF_VAR_google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          TF_VAR_three_rings_api_key: ${{ secrets.THREE_RINGS_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TF_VAR_google_client_id}" ]; then
+            echo "Missing secret GOOGLE_CLIENT_ID for environment ${WORKSPACE}" >&2
+            exit 1
+          fi
+          terraform apply -auto-approve \
+            -var-file="environments/${WORKSPACE}.tfvars" \
+            -var="container_image=${IMAGE}"
+
+      - name: Run database migrations
+        env:
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+        run: |
+          gcloud run jobs execute plasma-api-migrate \
+            --region="${REGION}" \
+            --project="${PROJECT_ID}" \
+            --wait

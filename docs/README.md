@@ -4,6 +4,8 @@
 
 - [Overview](technical/overview.md) — purpose, stack, how to run
 - [Architecture](technical/architecture.md) — components, auth and integration flows
+- [GCP hosting](technical/gcp-hosting.md) — Cloud Run / Cloud SQL decision
+- [Cloud Run deploy](technical/cloud-run.md) — bootstrap and operate hosting
 
 ## Non-technical
 

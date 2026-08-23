@@ -18,7 +18,9 @@ Terms used when talking about this project. Keep definitions short and free of i
 | Auth audit log | Record of failed sign-in attempts kept for security review |
 | Staging | Non-production Google Cloud project used to try changes safely (`plasma-staging-502110`) |
 | Production | Live Google Cloud project (`plasma-production`) |
-| Secret Manager | Google Cloud store for sensitive config such as the OAuth client ID |
+| Cloud Run | Google Cloud service that runs the API containers |
+| Cloud SQL | Google Cloud managed PostgreSQL database used by staging and production |
+| Secret Manager | Google Cloud store for sensitive config such as the app key and OAuth client ID |
 | CORS / frontend URL | Setting that lists which website origins (the Controller app) may call the API from a browser |
 | Fresh / stale cache | Two levels of remembered Three Rings data: prefer recent data; if Three Rings is unavailable, older cached data may still be used |
 | BR-005 / BR-008 | Internal business rules referenced in code: Three Rings access is read-only (GET); degrade gracefully using cached data when needed |

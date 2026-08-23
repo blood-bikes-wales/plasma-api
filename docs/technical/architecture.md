@@ -14,7 +14,7 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
 | Three Rings client | Read-only volunteer/role/shift fetches + cache | `app/Services/ThreeRings/` |
 | CORS | Allow SPA origins | `config/cors.php` |
-| GCP secrets | Store OAuth client ID + allowed domain | `infrastructure/main.tf` |
+| GCP hosting | Cloud Run, Cloud SQL, Secret Manager, WIF | `infrastructure/` |
 
 ## Data / control flow
 
@@ -61,9 +61,9 @@ Do not document routes that are not registered.
 
 | Store | Use |
 |-------|-----|
-| MySQL (Sail) | Users, auth audit logs, jobs/cache tables in local/dev |
+| PostgreSQL 17 (Sail / Cloud SQL) | Users, auth audit logs, jobs/cache tables |
 | SQLite `:memory:` | PHPUnit |
-| Cache store (config) | Three Rings fresh/stale TTLs when the client is used |
+| Cache store (`database`) | Three Rings fresh/stale TTLs; shared across Cloud Run instances |
 
 Three Rings cache lifetimes (seconds) live under `config/services.php` → `three_rings.cache` (volunteers, roles, shifts). Rate budget: 15 attempts / 60s fixed window (comments explain BR-005 GET-only and BR-008 stale fallback).
 
@@ -74,15 +74,15 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 | Plasma Controller SPA | Inbound (CORS + Bearer token) | UI; origins from `FRONTEND_URL` |
 | Google OAuth / Workspace | Inbound token verification | Sign-in identity (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_DOMAIN`) |
 | Three Rings (`3r.org.uk`) | Outbound GET | Volunteers, roles, shifts (`THREE_RINGS_*`) — service only today |
-| GCP Secret Manager | Config storage | OAuth client ID + allowed domain via Terraform |
+| GCP Secret Manager | Config storage | `APP_KEY`, DB password, OAuth client ID, Three Rings API key |
 
 ## Failure modes
 
 - Invalid or missing Bearer token → 401; audit + `auth` log channel
 - Unverified email or wrong Workspace domain → 403
 - Three Rings rate limit or outage → client prefers fresh cache, else stale (BR-008); no write-back to Three Rings
-- Terraform apply without Console OAuth client → you must supply `google_oauth_client_id` in tfvars; TF cannot create the client
-- No managed app runtime yet → secrets in GCP are not automatically injected into a running Laravel process
+- Terraform apply without Console OAuth client → you must supply `google_client_id`; TF cannot create the client
+- Cloud Run scale-out races if you migrate on HTTP boot; use the `plasma-api-migrate` job instead
 
 ## Conventions
 

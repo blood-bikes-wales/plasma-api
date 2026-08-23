@@ -44,3 +44,9 @@ pages:
     title: "Plasma API glossary"
     folder: "non-technical"
     url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12386416/Plasma+API+glossary"
+  technical/gcp-hosting.md:
+    title: "Plasma API GCP hosting"
+    folder: "technical"
+  technical/cloud-run.md:
+    title: "Plasma API Cloud Run deploy"
+    folder: "technical"
