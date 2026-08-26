@@ -1,52 +1,56 @@
 cloudId: "https://bloodbikeswales.atlassian.net"
-spaceId: "~557058fdb7bd6307154e4b8ecf7e4efeeb4be7"
+spaceId: "PD"
 projectName: "plasma-api"
-docsParentId: "12386307" # Software Documentation folder
+docsParentId: "17891506" # Project Documentation space homepage
 mcpServer: "user-Confluence communication server"
 
 folders:
   ".":
-    pageId: "12451945"
+    pageId: "17924114"
     title: "Plasma API"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12451945/Plasma+API"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17924114/Plasma+API"
   technical:
-    pageId: "12321046"
-    title: "Plasma API Technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321046/Plasma+API+Technical"
+    pageId: "18022431"
+    title: "Technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/18022431/Technical"
   non-technical:
-    pageId: "12321030"
-    title: "Plasma API Non-technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321030/Plasma+API+Non-technical"
+    pageId: "17924131"
+    title: "Non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17924131/Non-technical"
 
 pages:
   README.md:
-    pageId: "12386398"
-    title: "Plasma API project documentation"
+    pageId: "17891554"
+    title: "Overview"
     folder: "."
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12386398/Plasma+API+project+documentation"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17891554/Overview"
   technical/overview.md:
-    pageId: "12321062"
-    title: "Plasma API technical overview"
+    pageId: "18055202"
+    title: "Technical overview"
     folder: "technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12321062/Plasma+API+technical+overview"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/18055202/Technical+overview"
   technical/architecture.md:
-    pageId: "12288048"
-    title: "Plasma API architecture"
+    pageId: "17924147"
+    title: "Architecture"
     folder: "technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12288048/Plasma+API+architecture"
-  non-technical/overview.md:
-    pageId: "12288064"
-    title: "Plasma API project overview"
-    folder: "non-technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12288064/Plasma+API+project+overview"
-  non-technical/glossary.md:
-    pageId: "12386416"
-    title: "Plasma API glossary"
-    folder: "non-technical"
-    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/~557058fdb7bd6307154e4b8ecf7e4efeeb4be7/pages/12386416/Plasma+API+glossary"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17924147/Architecture"
   technical/gcp-hosting.md:
-    title: "Plasma API GCP hosting"
+    pageId: "17924149"
+    title: "GCP hosting"
     folder: "technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17924149/GCP+hosting"
   technical/cloud-run.md:
-    title: "Plasma API Cloud Run deploy"
+    pageId: "18022463"
+    title: "Cloud Run deploy"
     folder: "technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/18022463/Cloud+Run+deploy"
+  non-technical/overview.md:
+    pageId: "18055175"
+    title: "Project overview"
+    folder: "non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/18055175/Project+overview"
+  non-technical/glossary.md:
+    pageId: "18022447"
+    title: "Glossary"
+    folder: "non-technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/18022447/Glossary"
