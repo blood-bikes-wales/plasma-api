@@ -11,10 +11,11 @@ Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma 
 | Language / runtime | PHP `^8.3` (`composer.json`); local Sail and CI use PHP 8.5 |
 | Framework / platform | Laravel 13 |
 | Local runtime | Laravel Sail + Docker (`compose.yaml`, `install.sh`) |
-| Persistence (dev) | MySQL 8.4 (Sail); tests use in-memory SQLite (`phpunit.xml`) |
+| Persistence (dev) | PostgreSQL 17 (Sail); tests use in-memory SQLite (`phpunit.xml`) |
+| Persistence (cloud) | Cloud SQL PostgreSQL 17 |
 | Auth | Google ID token verification via `google/apiclient` |
-| Cloud config | Terraform → GCP Secret Manager (`infrastructure/`) |
-| CI | GitHub Actions: Composer, Pint, PHPUnit (`.github/workflows/ci.yml`) |
+| Cloud hosting | Cloud Run + Artifact Registry + Secret Manager (`infrastructure/`) |
+| CI | GitHub Actions: Composer, Pint, PHPUnit, Terraform validate; PRs deploy staging |
 
 ## Entrypoints
 
@@ -24,7 +25,7 @@ Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma 
 | Health | `GET /up` (Laravel default) |
 | Artisan / Sail | `./vendor/bin/sail artisan …` |
 | Bootstrap install | `./install.sh` |
-| Terraform | `infrastructure/` (OAuth-related secrets only today) |
+| Terraform | `infrastructure/` (Cloud Run, Cloud SQL, secrets, WIF) |
 
 ## How to run
 
@@ -52,7 +53,7 @@ Installs Composer dependencies via a temporary `laravelsail/php84-composer` cont
 
 Local: `./vendor/bin/sail up -d` → `http://localhost` (`/up`, `/api`).
 
-Deployed app hosting (Cloud Run, managed DB, secret injection into the runtime) is **not** in Terraform yet. Terraform currently enables APIs and stores `google-oauth-client-id` / `google-allowed-domain` in Secret Manager for staging (`plasma-staging-502110`) and production (`plasma-production`). OAuth Web clients are created in GCP Console; see [README Infrastructure](../README.md#infrastructure).
+Deployed hosting is Cloud Run in `europe-west2` on `plasma-staging-502110` / `plasma-production`, with Cloud SQL PostgreSQL and Secret Manager. See [GCP hosting](gcp-hosting.md) and [Cloud Run deploy](cloud-run.md). OAuth Web clients are still created in GCP Console (the API is deprecated).
 
 ## Key paths
 
@@ -67,7 +68,8 @@ Deployed app hosting (Cloud Run, managed DB, secret injection into the runtime) 
 | `config/services.php` | Google + Three Rings config |
 | `config/cors.php` | SPA origins from `FRONTEND_URL` |
 | `.env.example` | Env var template |
-| `infrastructure/` | Terraform root module + GCS backends |
+| `Dockerfile` | FrankenPHP production image |
+| `infrastructure/` | Terraform: Cloud Run, Cloud SQL, secrets, WIF |
 
 ## Pitfalls
 
@@ -77,4 +79,5 @@ Deployed app hosting (Cloud Run, managed DB, secret injection into the runtime) 
 - Do not invent HTTP routes for Three Rings — the client is internal until routes are added.
 - `laravel/boost` is dev-only; production installs must use `--no-dev`.
 - Terraform does **not** create OAuth clients (API deprecated); Console + Secret Manager only.
+- Cloud Run logs must use stderr (`LOG_STACK=stderr`, `LOG_AUTH_CHANNEL=stderr`); file channels do not persist.
 - Install image is `php84-composer` while Sail/CI run PHP 8.5; Composer may use `--ignore-platform-reqs` during bootstrap.

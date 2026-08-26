@@ -83,3 +83,19 @@ jobs:
 
       - name: Run tests
         run: php artisan test
+
+  terraform:
+    name: Terraform
+    uses: ./.github/workflows/terraform.yml
+
+  deploy-staging:
+    name: Deploy staging
+    if: github.event_name == 'pull_request'
+    needs: [pint, phpunit, terraform]
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: staging
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

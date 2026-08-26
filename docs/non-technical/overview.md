@@ -29,7 +29,7 @@ End users do not use this API directly in a browser; they use the Plasma Control
 
 ## Risks and limitations
 
-- The API is **not fully hosted in cloud as an application yet**; Terraform today mainly stores Google login settings in Google Cloud, not a full production website stack
+- Staging and production run on Google Cloud Run with a managed PostgreSQL database; a first-time laptop Terraform apply is required before GitHub can deploy
 - Volunteer data from Three Rings is prepared in code but **not exposed** to the Controller app over HTTP yet
 - Access depends on correct Google OAuth setup (client ID and allowed domain); misconfiguration blocks everyone or the wrong people
 - Three Rings is read-only from this system’s perspective — Plasma API does not update rotas there
@@ -38,5 +38,6 @@ End users do not use this API directly in a browser; they use the Plasma Control
 
 - Technical overview: [../technical/overview.md](../technical/overview.md)
 - Architecture: [../technical/architecture.md](../technical/architecture.md)
+- Hosting: [../technical/gcp-hosting.md](../technical/gcp-hosting.md)
 - Glossary: [glossary.md](glossary.md)
 - Root README (install, Terraform): [../../README.md](../../README.md)

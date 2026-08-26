@@ -19,6 +19,8 @@ and runs the database migrations.
 
 The API is then available at `http://localhost` (health check at `/up`, API routes under `/api`).
 
+Local database is PostgreSQL 17. If you previously ran Sail with MySQL, remove the old volume once: `./vendor/bin/sail down -v`.
+
 ### SPA / Google auth
 
 Protected routes expect `Authorization: Bearer <Google ID token>` from the Plasma Controller SPA.
@@ -57,8 +59,17 @@ PSR-12 code style is enforced with [Laravel Pint](https://laravel.com/docs/pint)
 ## Continuous integration
 
 GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push to
-`main` and on pull requests: a `build` job installs and caches the Composer dependencies,
-then `pint` (code style) and `phpunit` (tests) reuse that build and block the merge on failure.
+`main` and on pull requests: Composer install, Pint, PHPUnit, and Terraform validate.
+Pull requests that pass those checks deploy **staging**. Production deploys via
+[workflow_dispatch](.github/workflows/deploy.yml) on the `production` GitHub Environment.
+
+## Hosting
+
+Staging and production run on Cloud Run (`europe-west2`) with Cloud SQL PostgreSQL 17.
+See [docs/technical/gcp-hosting.md](docs/technical/gcp-hosting.md) and
+[docs/technical/cloud-run.md](docs/technical/cloud-run.md) for bootstrap and deploy.
+
+Local Sail uses PostgreSQL 17 (`compose.yaml`). Tests still use in-memory SQLite.
 
 ## Architecture conventions
 

@@ -65,13 +65,24 @@ return [
             'replace_placeholders' => true,
         ],
 
-        'auth' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/auth.log'),
-            'level' => env('LOG_LEVEL', 'info'),
-            'days' => env('LOG_DAILY_DAYS', 14),
-            'replace_placeholders' => true,
-        ],
+        'auth' => env('LOG_AUTH_CHANNEL', 'daily') === 'stderr'
+            ? [
+                'driver' => 'monolog',
+                'level' => env('LOG_LEVEL', 'info'),
+                'handler' => StreamHandler::class,
+                'handler_with' => [
+                    'stream' => 'php://stderr',
+                ],
+                'formatter' => env('LOG_STDERR_FORMATTER'),
+                'processors' => [PsrLogMessageProcessor::class],
+            ]
+            : [
+                'driver' => 'daily',
+                'path' => storage_path('logs/auth.log'),
+                'level' => env('LOG_LEVEL', 'info'),
+                'days' => env('LOG_DAILY_DAYS', 14),
+                'replace_placeholders' => true,
+            ],
 
         'daily' => [
             'driver' => 'daily',

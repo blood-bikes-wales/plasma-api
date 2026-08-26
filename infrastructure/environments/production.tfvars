@@ -1,0 +1,12 @@
+project_id              = "plasma-production"
+region                  = "europe-west2"
+service_name            = "plasma-api"
+artifact_repository_id  = "plasma-api"
+github_repository       = "blood-bikes-wales/plasma-api"
+deletion_protection     = true
+min_instance_count      = 1
+app_env                 = "production"
+sql_instance_name       = "plasma-api-pg"
+sql_tier                = "db-custom-1-3840"
+sql_pitr                = true
+sql_deletion_protection = true
