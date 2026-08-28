@@ -18,19 +18,20 @@ End users do not use this API directly in a browser; they use the Plasma Control
 2. The app sends a short-lived Google login token to Plasma API.
 3. The API checks the token is genuine and that the person belongs to the allowed Workspace domain.
 4. If checks pass, the API recognises them as a user; if not, access is refused and the attempt can be audited.
-5. Separately, the codebase can read volunteer and shift data from Three Rings (the charity’s rota system). Those reads are not yet offered as public API endpoints.
+5. Controllers can log riders on and off shift in Plasma (who is on duty, which bike, mileage). Volunteer names still come from Three Rings; Plasma never updates the Three Rings rota.
 
 ## What success looks like
 
 - Only Blood Bikes Wales Google accounts can call protected API features
 - The Controller app can reliably identify the signed-in person (`/api/me`)
+- The Controller app can log riders on and off shift (`/api/shifts/*`)
 - Failed sign-in attempts are recorded for investigation
 - Local development and automated tests keep the API safe to change without needing production access
 
 ## Risks and limitations
 
 - Staging and production run on Google Cloud Run with a managed PostgreSQL database; a first-time laptop Terraform apply is required before GitHub can deploy
-- Volunteer data from Three Rings is prepared in code but **not exposed** to the Controller app over HTTP yet
+- Volunteer directory search is not yet a public API endpoint; logon looks volunteers up internally
 - Access depends on correct Google OAuth setup (client ID and allowed domain); misconfiguration blocks everyone or the wrong people
 - Three Rings is read-only from this system’s perspective — Plasma API does not update rotas there
 

@@ -12,7 +12,8 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | Workspace auth middleware | Verify ID token, domain, provision user | `app/Http/Middleware/AuthenticateGoogleWorkspace.php` |
 | ID token verifier | `Google\Client::verifyIdToken` | `app/Services/Auth/GoogleApiClientIdTokenVerifier.php` |
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
-| Three Rings client | Read-only volunteer/role/shift fetches + cache | `app/Services/ThreeRings/` |
+| Three Rings client | Read-only volunteer/role/planned-rota fetches + cache | `app/Services/ThreeRings/` |
+| Operational shifts | Plasma-owned logon/logoff with bike mileage | `app/Services/Shifts/` |
 | CORS | Allow SPA origins | `config/cors.php` |
 | GCP hosting | Cloud Run, Cloud SQL, Secret Manager, WIF | `infrastructure/` |
 
@@ -26,8 +27,13 @@ flowchart LR
   Verifier --> Google[GoogleTokenEndpoint]
   AuthMw --> Users[(users)]
   AuthMw -->|"on failure"| Audit[(auth_audit_logs)]
-  Services[ThreeRingsClient] -->|"not HTTP-exposed yet"| ThreeR[ThreeRingsAPI]
-  Services --> Cache[(cache)]
+  Api --> Shifts[OperationalShiftService]
+  Shifts --> Bikes[(bikes)]
+  Shifts --> Duty[(operational_shifts)]
+  Shifts --> Mileage[(mileage_readings)]
+  Shifts -->|"volunteer lookup, never writes"| ThreeRingsClient
+  ThreeRingsClient -->|"not HTTP-exposed yet"| ThreeR[ThreeRingsAPI]
+  ThreeRingsClient --> Cache[(cache)]
 ```
 
 ### Auth sequence
@@ -44,8 +50,9 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 
 - `app/Contracts/GoogleIdTokenVerifier.php` — verifier interface; bound in `app/Providers/AppServiceProvider.php`
 - `app/Enums/AuthFailureReason.php` — audit failure reasons
-- `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, shifts); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
-- `database/migrations/` — `users`, `auth_audit_logs`, cache/jobs tables
+- `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, planned rota); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
+- `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
+- `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, cache/jobs tables
 
 ## Current HTTP surface
 
@@ -56,12 +63,17 @@ Do not document routes that are not registered.
 | GET | `/up` | none | Health |
 | GET | `/api/` | none | `{ "name": <app.name> }` |
 | GET | `/api/me` | `auth.google` | Authenticated `User` JSON |
+| GET | `/api/shifts/active` | `auth.google` | `{ "data": [ ActiveShift, … ] }` camelCase |
+| GET | `/api/bikes` | `auth.google` | `{ "data": [ { id, registration, lastRecordedMileage } ] }` |
+| GET | `/api/volunteers` | `auth.google` | `{ "data": [ { id, name } ] }` from Three Rings |
+| POST | `/api/shifts/logon` | `auth.google` + admin/controller | ActiveShift camelCase (`riderId`, `startMileage`, …) |
+| POST | `/api/shifts/{shift}/logoff` | `auth.google` + admin/controller | ActiveShift; body `{ endMileage, faults? }` |
 
 ## Persistence and caching
 
 | Store | Use |
 |-------|-----|
-| PostgreSQL 17 (Sail / Cloud SQL) | Users, auth audit logs, jobs/cache tables |
+| PostgreSQL 17 (Sail / Cloud SQL) | Users, auth audit logs, bikes, operational shifts, mileage readings, jobs/cache tables |
 | SQLite `:memory:` | PHPUnit |
 | Cache store (`database`) | Three Rings fresh/stale TTLs; shared across Cloud Run instances |
 
@@ -73,13 +85,16 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 |--------|-----------|---------|
 | Plasma Controller SPA | Inbound (CORS + Bearer token) | UI; origins from `FRONTEND_URL` |
 | Google OAuth / Workspace | Inbound token verification | Sign-in identity (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_DOMAIN`) |
-| Three Rings (`3r.org.uk`) | Outbound GET | Volunteers, roles, shifts (`THREE_RINGS_*`) — service only today |
+| Three Rings (`3r.org.uk`) | Outbound GET | Volunteers, roles, planned rota (`THREE_RINGS_*`) — not written back |
 | GCP Secret Manager | Config storage | `APP_KEY`, DB password, OAuth client ID, Three Rings API key |
 
 ## Failure modes
 
 - Invalid or missing Bearer token → 401; audit + `auth` log channel
 - Unverified email or wrong Workspace domain → 403
+- Logon/logoff without admin or controller role → 403
+- Duplicate active shift (same rider or bike), unknown rider, or mileage variance without a reason → 422 with field errors
+- Three Rings directory unavailable at logon (and no cache) → 503
 - Three Rings rate limit or outage → client prefers fresh cache, else stale (BR-008); no write-back to Three Rings
 - Terraform apply without Console OAuth client → you must supply `google_client_id`; TF cannot create the client
 - Cloud Run scale-out races if you migrate on HTTP boot; use the `plasma-api-migrate` job instead
