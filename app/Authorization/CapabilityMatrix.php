@@ -18,6 +18,7 @@ final class CapabilityMatrix
     {
         return match ($capability) {
             Capability::ViewActiveShifts,
+            Capability::ViewDirectory,
             Capability::ViewJobs => [
                 Role::Controller,
                 Role::Driver,
