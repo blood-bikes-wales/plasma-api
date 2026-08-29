@@ -34,6 +34,41 @@ final readonly class Volunteer
         );
     }
 
+    public function area(): ?string
+    {
+        return self::propertyMatching($this->properties, 'area');
+    }
+
+    public function phone(): ?string
+    {
+        $phone = self::propertyMatching($this->properties, 'telephone');
+        if ($phone !== null) {
+            return $phone;
+        }
+
+        return self::propertyMatching($this->properties, 'phone');
+    }
+
+    /**
+     * @param  array<string, mixed>  $properties
+     */
+    private static function propertyMatching(array $properties, string $needle): ?string
+    {
+        foreach ($properties as $name => $value) {
+            if (! is_string($value) || $value === '') {
+                continue;
+            }
+
+            if (! Str::contains(Str::lower((string) $name), Str::lower($needle))) {
+                continue;
+            }
+
+            return $value;
+        }
+
+        return null;
+    }
+
     /**
      * Flatten Three Rings' nested volunteer_properties entries into a
      * name => value map, tolerating both wrapped and unwrapped entries.

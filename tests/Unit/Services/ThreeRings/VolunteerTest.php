@@ -58,4 +58,20 @@ class VolunteerTest extends TestCase
         $this->assertSame(['Driver'], $volunteer->roles);
         $this->assertSame('carys.evans@example.com', $volunteer->email);
     }
+
+    public function test_from_array_extracts_area_and_phone_properties(): void
+    {
+        $volunteer = Volunteer::fromArray([
+            'id' => 100004,
+            'name' => 'Dafydd Price',
+            'roles' => [],
+            'volunteer_properties' => [
+                ['volunteer_property' => ['name' => 'Area', 'value' => 'South Wales']],
+                ['volunteer_property' => ['name' => 'Telephone', 'value' => '07700900099']],
+            ],
+        ]);
+
+        $this->assertSame('South Wales', $volunteer->area());
+        $this->assertSame('07700900099', $volunteer->phone());
+    }
 }

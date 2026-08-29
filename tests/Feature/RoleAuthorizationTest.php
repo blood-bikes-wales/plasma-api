@@ -61,6 +61,9 @@ class RoleAuthorizationTest extends TestCase
         $this->withToken('valid-token')->getJson('/api/volunteers')->assertForbidden();
         $this->withToken('valid-token')->postJson('/api/jobs', [])->assertForbidden();
         $this->withToken('valid-token')->getJson('/api/jobs/active')->assertOk();
+        $this->withToken('valid-token')
+            ->getJson('/api/directory/volunteers?q=alex')
+            ->assertOk();
     }
 
     public function test_a_client_active_role_header_does_not_grant_access(): void

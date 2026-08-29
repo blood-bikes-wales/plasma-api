@@ -2,6 +2,7 @@
 
 use App\Enums\JobScope;
 use App\Http\Controllers\Api\BikeController;
+use App\Http\Controllers\Api\DirectoryController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\ShiftController;
@@ -40,6 +41,15 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
                 JobScope::cases(),
             ))
             ->name('jobs.index');
+    });
+
+    Route::middleware('access:view-directory')->group(function () {
+        Route::get('/directory/volunteers', [DirectoryController::class, 'volunteers'])
+            ->name('directory.volunteers');
+        Route::get('/directory/bikes', [DirectoryController::class, 'bikes'])
+            ->name('directory.bikes');
+        Route::get('/directory/bikes/{bike}', [DirectoryController::class, 'showBike'])
+            ->name('directory.bikes.show');
     });
 
     Route::middleware('access:create-job')->group(function () {
