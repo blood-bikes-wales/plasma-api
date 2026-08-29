@@ -15,6 +15,7 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
 | Three Rings client | Read-only volunteer/role/planned-rota fetches + cache | `app/Services/ThreeRings/` |
 | Operational shifts | Plasma-owned logon/logoff with bike mileage | `app/Services/Shifts/` |
+| Delivery jobs | Create jobs in New with validated Places locations | `app/Services/Jobs/` |
 | CORS | Allow SPA origins | `config/cors.php` |
 | GCP hosting | Cloud Run, Cloud SQL, Secret Manager, WIF | `infrastructure/` |
 
@@ -32,6 +33,8 @@ flowchart LR
   Shifts --> Bikes[(bikes)]
   Shifts --> Duty[(operational_shifts)]
   Shifts --> Mileage[(mileage_readings)]
+  Api --> Jobs[DeliveryJobService]
+  Jobs --> DeliveryJobs[(delivery_jobs)]
   Shifts -->|"volunteer lookup, never writes"| ThreeRingsClient
   ThreeRingsClient -->|"not HTTP-exposed yet"| ThreeR[ThreeRingsAPI]
   ThreeRingsClient --> Cache[(cache)]
@@ -53,8 +56,9 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 - `app/Enums/AuthFailureReason.php` — audit failure reasons
 - `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, planned rota); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
+- `app/Services/Jobs/DeliveryJobService.php` — create a delivery job in New with a display reference
 - `app/Authorization/CapabilityMatrix.php` — which roles may use each named capability; admin is expanded in `Role::expand()`
-- `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, cache/jobs tables
+- `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, `delivery_jobs`, cache/jobs tables
 
 ## Current HTTP surface
 
@@ -70,12 +74,13 @@ Do not document routes that are not registered.
 | GET | `/api/volunteers` | `auth.google` + controller (admin via hierarchy) | `{ "data": [ { id, name } ] }` from Three Rings |
 | POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …) |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults? }` |
+| POST | `/api/jobs` | `auth.google` + controller (admin via hierarchy) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`) |
 
 ## Persistence and caching
 
 | Store | Use |
 |-------|-----|
-| PostgreSQL 17 (Sail / Cloud SQL) | Users, auth audit logs, bikes, operational shifts, mileage readings, jobs/cache tables |
+| PostgreSQL 17 (Sail / Cloud SQL) | Users, auth audit logs, bikes, operational shifts, mileage readings, delivery jobs, jobs/cache tables |
 | SQLite `:memory:` | PHPUnit |
 | Cache store (`database`) | Three Rings fresh/stale TTLs; shared across Cloud Run instances |
 
@@ -95,9 +100,10 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 - Invalid or missing Bearer token → 401; audit + `auth` log channel
 - Unverified email or wrong Workspace domain → 403
 - Signed-in user with no Plasma roles → 200 on `/api/me`, 403 on every other protected route
-- Logon/logoff, bikes, or volunteers without controller (or admin) → 403
+- Logon/logoff, bikes, volunteers, or job creation without controller (or admin) → 403
 - Client `X-Active-Role` (and similar) headers are ignored; roles come only from Three Rings + `is_admin`
 - Duplicate active shift (same rider or bike), unknown rider, or mileage variance without a reason → 422 with field errors
+- Job locations missing place ID, coordinates, or address → 422 with field errors
 - Three Rings directory unavailable at logon (and no cache) → 503
 - Three Rings rate limit or outage → client prefers fresh cache, else stale (BR-008); no write-back to Three Rings
 - Terraform apply without Console OAuth client → you must supply `google_client_id`; TF cannot create the client

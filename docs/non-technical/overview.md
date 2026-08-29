@@ -2,7 +2,7 @@
 
 ## What this is
 
-Plasma API is the backend for Blood Bikes Wales’ Plasma tools. It lets signed-in charity accounts talk securely to a central service that will serve volunteer and rota information. Today it mainly proves who you are (via Google Workspace) and returns a simple “who am I” response; more features will build on that foundation.
+Plasma API is the backend for Blood Bikes Wales’ Plasma tools. Signed-in charity accounts call it from the Plasma Controller app. It proves who you are (via Google Workspace), lets controllers log riders on and off duty, and records delivery jobs.
 
 ## Who it’s for
 
@@ -19,12 +19,14 @@ End users do not use this API directly in a browser; they use the Plasma Control
 3. The API checks the token is genuine and that the person belongs to the allowed Workspace domain.
 4. If checks pass, the API recognises them as a user; if not, access is refused and the attempt can be audited.
 5. Controllers can log riders on and off shift in Plasma (who is on duty, which bike, mileage). Volunteer names still come from Three Rings; Plasma never updates the Three Rings rota.
+6. Controllers can create a delivery job with validated collection and delivery locations. New jobs start in the New state until they are allocated.
 
 ## What success looks like
 
 - Only Blood Bikes Wales Google accounts can call protected API features
 - The Controller app can reliably identify the signed-in person (`/api/me`)
 - The Controller app can log riders on and off shift (`/api/shifts/*`)
+- The Controller app can create a delivery job (`POST /api/jobs`) in the New state
 - Failed sign-in attempts are recorded for investigation
 - Local development and automated tests keep the API safe to change without needing production access
 

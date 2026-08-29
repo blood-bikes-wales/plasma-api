@@ -33,6 +33,16 @@ class EnsureHasCapabilityTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function test_allows_a_controller_to_create_a_job(): void
+    {
+        $response = $this->handle(
+            assigned: [Role::Controller],
+            capability: Capability::CreateJob,
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     public function test_forbids_a_rider_from_managing_shifts(): void
     {
         $response = $this->handle(

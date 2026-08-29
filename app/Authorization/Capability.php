@@ -13,4 +13,5 @@ enum Capability: string
     case ManageShifts = 'manage-shifts';
     case ViewBikes = 'view-bikes';
     case ViewVolunteers = 'view-volunteers';
+    case CreateJob = 'create-job';
 }
