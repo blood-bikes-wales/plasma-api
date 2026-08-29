@@ -14,4 +14,5 @@ enum Capability: string
     case ViewBikes = 'view-bikes';
     case ViewVolunteers = 'view-volunteers';
     case CreateJob = 'create-job';
+    case ViewJobs = 'view-jobs';
 }

@@ -15,7 +15,7 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
 | Three Rings client | Read-only volunteer/role/planned-rota fetches + cache | `app/Services/ThreeRings/` |
 | Operational shifts | Plasma-owned logon/logoff with bike mileage | `app/Services/Shifts/` |
-| Delivery jobs | Create jobs in New with validated Places locations | `app/Services/Jobs/` |
+| Delivery jobs | Create jobs in New; list active and completed | `app/Services/Jobs/` |
 | CORS | Allow SPA origins | `config/cors.php` |
 | GCP hosting | Cloud Run, Cloud SQL, Secret Manager, WIF | `infrastructure/` |
 
@@ -56,7 +56,7 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 - `app/Enums/AuthFailureReason.php` — audit failure reasons
 - `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, planned rota); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
-- `app/Services/Jobs/DeliveryJobService.php` — create a delivery job in New with a display reference
+- `app/Services/Jobs/DeliveryJobService.php` — create a delivery job in New; list active and completed jobs
 - `app/Authorization/CapabilityMatrix.php` — which roles may use each named capability; admin is expanded in `Role::expand()`
 - `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, `delivery_jobs`, cache/jobs tables
 
@@ -74,6 +74,7 @@ Do not document routes that are not registered.
 | GET | `/api/volunteers` | `auth.google` + controller (admin via hierarchy) | `{ "data": [ { id, name } ] }` from Three Rings |
 | POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …) |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults? }` |
+| GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled) |
 | POST | `/api/jobs` | `auth.google` + controller (admin via hierarchy) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`) |
 
 ## Persistence and caching
@@ -104,6 +105,7 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 - Client `X-Active-Role` (and similar) headers are ignored; roles come only from Three Rings + `is_admin`
 - Duplicate active shift (same rider or bike), unknown rider, or mileage variance without a reason → 422 with field errors
 - Job locations missing place ID, coordinates, or address → 422 with field errors
+- Unknown job list scope (not `active` or `completed`) → 404
 - Three Rings directory unavailable at logon (and no cache) → 503
 - Three Rings rate limit or outage → client prefers fresh cache, else stale (BR-008); no write-back to Three Rings
 - Terraform apply without Console OAuth client → you must supply `google_client_id`; TF cannot create the client

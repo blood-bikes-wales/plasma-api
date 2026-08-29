@@ -2,9 +2,11 @@
 
 namespace App\Services\Jobs;
 
+use App\Enums\JobScope;
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Log;
 
 final class DeliveryJobService
@@ -44,6 +46,18 @@ final class DeliveryJobService
         ]);
 
         return $job;
+    }
+
+    /**
+     * @return Collection<int, DeliveryJob>
+     */
+    public function listByScope(JobScope $scope): Collection
+    {
+        return DeliveryJob::query()
+            ->whereIn('status', $scope->statuses())
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->get();
     }
 
     private function nextReference(): string

@@ -17,7 +17,8 @@ final class CapabilityMatrix
     public static function roles(Capability $capability): array
     {
         return match ($capability) {
-            Capability::ViewActiveShifts => [
+            Capability::ViewActiveShifts,
+            Capability::ViewJobs => [
                 Role::Controller,
                 Role::Driver,
                 Role::Rider,
