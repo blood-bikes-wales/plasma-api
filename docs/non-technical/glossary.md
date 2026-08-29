@@ -15,6 +15,8 @@ Terms used when talking about this project. Keep definitions short and free of i
 | Role | A Three Rings permission or duty type (e.g. rider, controller) |
 | Shift / rota | Scheduled (planned) duty entries from Three Rings; Plasma does not write these |
 | Operational shift | Plasma-owned on-duty session: a rider logged on with a bike and mileage |
+| Delivery job | A blood-product (or similar) transport request owned by Plasma, from New through collect/deliver |
+| Job reference | Short display code for a delivery job (for example `JB-1042`) |
 | Sail | Docker-based local development environment for the API (no need to install PHP on the laptop) |
 | Auth audit log | Record of failed sign-in attempts kept for security review |
 | Staging | Non-production Google Cloud project used to try changes safely (`plasma-staging-502110`) |

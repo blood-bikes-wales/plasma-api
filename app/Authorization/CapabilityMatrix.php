@@ -25,7 +25,8 @@ final class CapabilityMatrix
             ],
             Capability::ManageShifts,
             Capability::ViewBikes,
-            Capability::ViewVolunteers => [
+            Capability::ViewVolunteers,
+            Capability::CreateJob => [
                 Role::Controller,
             ],
         };

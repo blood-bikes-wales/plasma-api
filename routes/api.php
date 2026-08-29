@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\BikeController;
+use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\VolunteerController;
@@ -29,5 +30,9 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
     Route::middleware('access:manage-shifts')->group(function () {
         Route::post('/shifts/logon', [ShiftController::class, 'logon'])->name('shifts.logon');
         Route::post('/shifts/{shift}/logoff', [ShiftController::class, 'logoff'])->name('shifts.logoff');
+    });
+
+    Route::middleware('access:create-job')->group(function () {
+        Route::post('/jobs', [JobController::class, 'store'])->name('jobs.store');
     });
 });
