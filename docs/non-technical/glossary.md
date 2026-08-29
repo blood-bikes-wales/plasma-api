@@ -13,7 +13,8 @@ Terms used when talking about this project. Keep definitions short and free of i
 | Three Rings (3R) | External system of record for volunteers, roles, and shifts (`3r.org.uk`) |
 | Volunteer | A person recorded in Three Rings who may take part in blood bike duties |
 | Role | A Three Rings permission or duty type (e.g. rider, controller) |
-| Shift / rota | Scheduled duty entries from Three Rings |
+| Shift / rota | Scheduled (planned) duty entries from Three Rings; Plasma does not write these |
+| Operational shift | Plasma-owned on-duty session: a rider logged on with a bike and mileage |
 | Sail | Docker-based local development environment for the API (no need to install PHP on the laptop) |
 | Auth audit log | Record of failed sign-in attempts kept for security review |
 | Staging | Non-production Google Cloud project used to try changes safely (`plasma-staging-502110`) |
