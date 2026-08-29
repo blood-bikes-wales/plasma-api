@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources;
 
-use App\Enums\JobAction;
 use App\Models\DeliveryJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -25,6 +24,9 @@ class DeliveryJobResource extends JsonResource
             'id' => $this->id,
             'reference' => $this->reference,
             'status' => $this->status->value,
+            'isRelay' => (bool) $this->is_relay,
+            'parentJobId' => $this->parent_job_id,
+            'legNumber' => $this->leg_number,
             'sender' => [
                 'name' => $this->sender_name,
                 'phone' => $this->sender_phone,
@@ -66,10 +68,11 @@ class DeliveryJobResource extends JsonResource
                 'reason' => $this->cancellation_reason,
                 'cancelledAt' => $this->cancelled_at?->toIso8601String(),
             ],
-            'allowedActions' => array_map(
-                static fn (JobAction $action): string => $action->value,
-                JobAction::forStatus($this->status),
+            'legs' => $this->when(
+                $this->is_relay && $this->relationLoaded('legs'),
+                fn () => DeliveryJobResource::collection($this->legs),
             ),
+            'allowedActions' => $this->allowedActionNames(),
         ];
     }
 }

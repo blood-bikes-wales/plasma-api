@@ -9,6 +9,7 @@ use App\Http\Requests\AllocateDeliveryJobRequest;
 use App\Http\Requests\CancelDeliveryJobRequest;
 use App\Http\Requests\CollectDeliveryJobRequest;
 use App\Http\Requests\DeliverDeliveryJobRequest;
+use App\Http\Requests\RelayDeliveryJobRequest;
 use App\Http\Requests\StoreDeliveryJobRequest;
 use App\Http\Resources\DeliveryJobResource;
 use App\Models\DeliveryJob;
@@ -44,6 +45,16 @@ class JobController extends Controller
         return (new DeliveryJobResource($job))
             ->response()
             ->setStatusCode(201);
+    }
+
+    public function relay(RelayDeliveryJobRequest $request, DeliveryJob $job): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $updated = $this->jobs->relay($user, $job, $request->validated());
+
+        return (new DeliveryJobResource($updated))->response();
     }
 
     public function action(Request $request, DeliveryJob $job, string $action): JsonResponse
