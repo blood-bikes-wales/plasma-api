@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\JobAction;
 use App\Models\DeliveryJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -44,6 +45,31 @@ class DeliveryJobResource extends JsonResource
             'contents' => $this->contents,
             'serviceAreas' => $this->service_areas,
             'createdAt' => $this->created_at?->toIso8601String(),
+            'allocatedRider' => $this->allocated_rider_id === null ? null : [
+                'id' => (string) $this->allocated_rider_id,
+                'name' => $this->allocated_rider_name,
+                'shiftId' => $this->operational_shift_id,
+                'allocatedAt' => $this->allocated_at?->toIso8601String(),
+            ],
+            'collectionRecord' => $this->collected_at === null ? null : [
+                'contentsConfirmed' => $this->contents_confirmed,
+                'suitablySealed' => $this->suitably_sealed,
+                'sealNumber' => $this->seal_number,
+                'receiptNumber' => $this->receipt_number,
+                'collectedAt' => $this->collected_at?->toIso8601String(),
+            ],
+            'deliveryRecord' => $this->delivered_at === null ? null : [
+                'recipient' => $this->recipient,
+                'deliveredAt' => $this->delivered_at?->toIso8601String(),
+            ],
+            'cancellation' => $this->cancelled_at === null ? null : [
+                'reason' => $this->cancellation_reason,
+                'cancelledAt' => $this->cancelled_at?->toIso8601String(),
+            ],
+            'allowedActions' => array_map(
+                static fn (JobAction $action): string => $action->value,
+                JobAction::forStatus($this->status),
+            ),
         ];
     }
 }
