@@ -19,7 +19,7 @@ End users do not use this API directly in a browser; they use the Plasma Control
 3. The API checks the token is genuine and that the person belongs to the allowed Workspace domain.
 4. If checks pass, the API recognises them as a user; if not, access is refused and the attempt can be audited.
 5. Controllers can log riders on and off shift in Plasma (who is on duty, which bike, mileage). Volunteer names still come from Three Rings; Plasma never updates the Three Rings rota.
-6. Controllers can create a delivery job with validated collection and delivery locations. New jobs start in the New state until they are allocated.
+6. Controllers can create a delivery job with validated collection and delivery locations. New jobs start in the New state until they are allocated. Signed-in riders, controllers, and other Plasma roles can list active and completed jobs.
 
 ## What success looks like
 
@@ -27,6 +27,7 @@ End users do not use this API directly in a browser; they use the Plasma Control
 - The Controller app can reliably identify the signed-in person (`/api/me`)
 - The Controller app can log riders on and off shift (`/api/shifts/*`)
 - The Controller app can create a delivery job (`POST /api/jobs`) in the New state
+- The Controller app can list active and completed jobs (`GET /api/jobs/active`, `GET /api/jobs/completed`)
 - Failed sign-in attempts are recorded for investigation
 - Local development and automated tests keep the API safe to change without needing production access
 

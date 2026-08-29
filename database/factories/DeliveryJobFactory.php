@@ -38,4 +38,24 @@ class DeliveryJobFactory extends Factory
             'created_by_user_id' => User::factory(),
         ];
     }
+
+    public function allocated(): static
+    {
+        return $this->state(['status' => JobStatus::Allocated]);
+    }
+
+    public function collected(): static
+    {
+        return $this->state(['status' => JobStatus::Collected]);
+    }
+
+    public function delivered(): static
+    {
+        return $this->state(['status' => JobStatus::Delivered]);
+    }
+
+    public function cancelled(): static
+    {
+        return $this->state(['status' => JobStatus::Cancelled]);
+    }
 }

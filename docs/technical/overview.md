@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma Controller SPA users with Google Workspace ID tokens and exposes a small HTTP surface under `/api`, including operational shift logon/logoff and delivery job creation. A Three Rings client exists in the service layer for volunteer/planned-rota data (read-only) and is used to identify riders at logon.
+Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma Controller SPA users with Google Workspace ID tokens and exposes a small HTTP surface under `/api`, including operational shift logon/logoff, delivery job creation, and job listing. A Three Rings client exists in the service layer for volunteer/planned-rota data (read-only) and is used to identify riders at logon.
 
 ## Stack
 
@@ -64,7 +64,7 @@ Deployed hosting is Cloud Run in `europe-west2` on `plasma-staging-502110` / `pl
 | `app/Services/Auth/GoogleApiClientIdTokenVerifier.php` | Token verification |
 | `app/Services/ThreeRings/` | Three Rings HTTP client + DTOs (directory lookup at logon; rota not routed) |
 | `app/Services/Shifts/` | Operational shift logon/logoff and mileage history |
-| `app/Services/Jobs/` | Delivery job creation (New state, Places locations) |
+| `app/Services/Jobs/` | Delivery job creation (New state, Places locations) and listing by scope |
 | `app/Authorization/` | Capability matrix; admin includes controller capabilities |
 | `app/Models/User.php` | Workspace-provisioned users |
 | `app/Models/AuthAuditLog.php` | Failed-auth audit rows |

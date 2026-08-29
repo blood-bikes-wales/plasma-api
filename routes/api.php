@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\JobScope;
 use App\Http\Controllers\Api\BikeController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MeController;
@@ -30,6 +31,15 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
     Route::middleware('access:manage-shifts')->group(function () {
         Route::post('/shifts/logon', [ShiftController::class, 'logon'])->name('shifts.logon');
         Route::post('/shifts/{shift}/logoff', [ShiftController::class, 'logoff'])->name('shifts.logoff');
+    });
+
+    Route::middleware('access:view-jobs')->group(function () {
+        Route::get('/jobs/{scope}', [JobController::class, 'index'])
+            ->whereIn('scope', array_map(
+                static fn (JobScope $scope): string => $scope->value,
+                JobScope::cases(),
+            ))
+            ->name('jobs.index');
     });
 
     Route::middleware('access:create-job')->group(function () {

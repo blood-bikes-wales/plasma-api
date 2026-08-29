@@ -48,6 +48,7 @@ class RoleAuthorizationTest extends TestCase
         $this->withToken('valid-token')
             ->postJson('/api/jobs', [])
             ->assertForbidden();
+        $this->withToken('valid-token')->getJson('/api/jobs/active')->assertForbidden();
     }
 
     public function test_a_rider_can_read_active_shifts_but_not_manage_them(): void
@@ -59,6 +60,7 @@ class RoleAuthorizationTest extends TestCase
         $this->withToken('valid-token')->getJson('/api/bikes')->assertForbidden();
         $this->withToken('valid-token')->getJson('/api/volunteers')->assertForbidden();
         $this->withToken('valid-token')->postJson('/api/jobs', [])->assertForbidden();
+        $this->withToken('valid-token')->getJson('/api/jobs/active')->assertOk();
     }
 
     public function test_a_client_active_role_header_does_not_grant_access(): void
