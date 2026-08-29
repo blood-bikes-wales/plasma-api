@@ -12,6 +12,25 @@ class BikeIndexTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config()->set('services.three_rings', [
+            'base_url' => 'https://www.3r.org.uk',
+            'key' => 'test-key',
+            'contact_email' => 'dev@bloodbikes.wales',
+            'rate_limit' => ['max_attempts' => 15, 'decay_seconds' => 60],
+            'cache' => [
+                'volunteers' => ['fresh' => 3600, 'stale' => 86400],
+                'roles' => ['fresh' => 21600, 'stale' => 172800],
+                'shifts' => ['fresh' => 300, 'stale' => 3600],
+            ],
+        ]);
+
+        Http::preventStrayRequests();
+    }
+
     public function test_lists_bikes_in_registration_order(): void
     {
         Bike::factory()->create([
@@ -24,7 +43,9 @@ class BikeIndexTest extends TestCase
         ]);
 
         Http::fake([
-            'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => []]),
+            'www.3r.org.uk/directory.json*' => Http::response([
+                'volunteers' => [$this->controllerVolunteer()],
+            ]),
         ]);
         $this->mockVerifiedClaims();
 
@@ -39,6 +60,23 @@ class BikeIndexTest extends TestCase
     public function test_unauthenticated_requests_are_denied(): void
     {
         $this->getJson('/api/bikes')->assertUnauthorized();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function controllerVolunteer(): array
+    {
+        return [
+            'id' => 100010,
+            'name' => 'Test Controller',
+            'roles' => [
+                ['role' => ['id' => 5002, 'name' => 'Controller']],
+            ],
+            'volunteer_properties' => [
+                ['volunteer_property' => ['name' => 'Email', 'value' => 'rider@bloodbikes.wales']],
+            ],
+        ];
     }
 
     /**

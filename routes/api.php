@@ -13,11 +13,20 @@ Route::get('/', fn () => response()->json([
 
 Route::middleware(['auth.google', 'roles'])->group(function () {
     Route::get('/me', MeController::class)->name('me');
-    Route::get('/shifts/active', [ShiftController::class, 'active'])->name('shifts.active');
-    Route::get('/bikes', [BikeController::class, 'index'])->name('bikes.index');
-    Route::get('/volunteers', [VolunteerController::class, 'index'])->name('volunteers.index');
 
-    Route::middleware('role:admin,controller')->group(function () {
+    Route::middleware('access:view-active-shifts')->group(function () {
+        Route::get('/shifts/active', [ShiftController::class, 'active'])->name('shifts.active');
+    });
+
+    Route::middleware('access:view-bikes')->group(function () {
+        Route::get('/bikes', [BikeController::class, 'index'])->name('bikes.index');
+    });
+
+    Route::middleware('access:view-volunteers')->group(function () {
+        Route::get('/volunteers', [VolunteerController::class, 'index'])->name('volunteers.index');
+    });
+
+    Route::middleware('access:manage-shifts')->group(function () {
         Route::post('/shifts/logon', [ShiftController::class, 'logon'])->name('shifts.logon');
         Route::post('/shifts/{shift}/logoff', [ShiftController::class, 'logoff'])->name('shifts.logoff');
     });

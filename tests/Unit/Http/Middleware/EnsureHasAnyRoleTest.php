@@ -43,6 +43,16 @@ class EnsureHasAnyRoleTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function test_admin_satisfies_a_controller_requirement(): void
+    {
+        $response = $this->handle(
+            assigned: [Role::Admin],
+            required: ['controller'],
+        );
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     public function test_forbids_a_request_when_assigned_roles_are_not_an_array(): void
     {
         $response = $this->handle(

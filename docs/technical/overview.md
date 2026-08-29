@@ -64,6 +64,7 @@ Deployed hosting is Cloud Run in `europe-west2` on `plasma-staging-502110` / `pl
 | `app/Services/Auth/GoogleApiClientIdTokenVerifier.php` | Token verification |
 | `app/Services/ThreeRings/` | Three Rings HTTP client + DTOs (directory lookup at logon; rota not routed) |
 | `app/Services/Shifts/` | Operational shift logon/logoff and mileage history |
+| `app/Authorization/` | Capability matrix; admin includes controller capabilities |
 | `app/Models/User.php` | Workspace-provisioned users |
 | `app/Models/AuthAuditLog.php` | Failed-auth audit rows |
 | `config/services.php` | Google + Three Rings config |

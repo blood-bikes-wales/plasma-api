@@ -32,6 +32,22 @@ class RoleTest extends TestCase
         ];
     }
 
+    public function test_expand_grants_admin_every_other_role(): void
+    {
+        $this->assertSame(
+            [Role::Admin, Role::Controller, Role::Driver, Role::Rider, Role::Trustee],
+            Role::expand([Role::Admin]),
+        );
+    }
+
+    public function test_expand_leaves_non_admin_roles_unchanged(): void
+    {
+        $this->assertSame(
+            [Role::Controller, Role::Rider],
+            Role::expand([Role::Rider, Role::Controller]),
+        );
+    }
+
     public function test_unique_sorted_puts_admin_first_then_alphabetical(): void
     {
         $sorted = Role::uniqueSorted([

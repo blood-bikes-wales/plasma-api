@@ -28,6 +28,39 @@ enum Role: string
     }
 
     /**
+     * Expand hierarchy: admin includes every other Plasma role.
+     *
+     * @param  list<self>  $roles
+     * @return list<self>
+     */
+    public static function expand(array $roles): array
+    {
+        $withImplied = array_map(
+            static fn (self $role): array => [$role, ...self::impliedBy($role)],
+            $roles,
+        );
+
+        return self::uniqueSorted(array_merge([], ...$withImplied));
+    }
+
+    /**
+     * @return list<self>
+     */
+    public static function impliedBy(self $role): array
+    {
+        if ($role !== self::Admin) {
+            return [];
+        }
+
+        return [
+            self::Controller,
+            self::Driver,
+            self::Rider,
+            self::Trustee,
+        ];
+    }
+
+    /**
      * Stable display order: admin first, then alphabetical by value.
      *
      * @param  list<self>  $roles
