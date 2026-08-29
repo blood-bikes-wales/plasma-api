@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma Controller SPA users with Google Workspace ID tokens and exposes a small HTTP surface under `/api`, including operational shift logon/logoff, delivery job creation, and job listing. A Three Rings client exists in the service layer for volunteer/planned-rota data (read-only) and is used to identify riders at logon.
+Plasma API is a Laravel JSON API for Blood Bikes Wales. It authenticates Plasma Controller SPA users with Google Workspace ID tokens and exposes a small HTTP surface under `/api`, including operational shift logon/logoff, delivery job creation and lifecycle, job listing, and a volunteer/bike directory. A Three Rings client exists in the service layer for volunteer/planned-rota data (read-only) and is used at logon and in the directory.
 
 ## Stack
 
@@ -62,9 +62,11 @@ Deployed hosting is Cloud Run in `europe-west2` on `plasma-staging-502110` / `pl
 | `routes/api.php` | HTTP API routes |
 | `app/Http/Middleware/AuthenticateGoogleWorkspace.php` | Bearer Google ID token auth |
 | `app/Services/Auth/GoogleApiClientIdTokenVerifier.php` | Token verification |
-| `app/Services/ThreeRings/` | Three Rings HTTP client + DTOs (directory lookup at logon; rota not routed) |
+| `app/Services/ThreeRings/` | Three Rings HTTP client + DTOs (logon rider lookup; directory volunteer search) |
 | `app/Services/Shifts/` | Operational shift logon/logoff and mileage history |
-| `app/Services/Jobs/` | Delivery job creation (New state, Places locations) and listing by scope |
+| `app/Services/Jobs/` | Delivery job create, relay, allocate/collect/deliver/cancel, list by scope |
+| `app/Services/Directory/` | Volunteer directory search (Three Rings, read-only) |
+| `app/Services/Bikes/` | Bike log search and mileage history |
 | `app/Authorization/` | Capability matrix; admin includes controller capabilities |
 | `app/Models/User.php` | Workspace-provisioned users |
 | `app/Models/AuthAuditLog.php` | Failed-auth audit rows |
@@ -79,7 +81,7 @@ Deployed hosting is Cloud Run in `europe-west2` on `plasma-staging-502110` / `pl
 - Protected routes need the **same** Web OAuth client ID the SPA uses (`GOOGLE_CLIENT_ID`); domain must match `GOOGLE_ALLOWED_DOMAIN` (e.g. `bloodbikes.wales`).
 - `AUTH_DISABLED=true` only works in `local` / `testing`; inert when deployed.
 - CORS: set `FRONTEND_URL` to the SPA origin(s), comma-separated.
-- Do not invent HTTP routes for Three Rings — the client is internal until routes are added.
+- Do not invent HTTP routes — only document routes registered in `routes/api.php`.
 - `laravel/boost` is dev-only; production installs must use `--no-dev`.
 - Terraform does **not** create OAuth clients (API deprecated); Console + Secret Manager only.
 - Cloud Run logs must use stderr (`LOG_STACK=stderr`, `LOG_AUTH_CHANNEL=stderr`); file channels do not persist.

@@ -17,6 +17,13 @@ Terms used when talking about this project. Keep definitions short and free of i
 | Operational shift | Plasma-owned on-duty session: a rider logged on with a bike and mileage |
 | Delivery job | A blood-product (or similar) transport request owned by Plasma, from New through collect/deliver |
 | Job reference | Short display code for a delivery job (for example `JB-1042`) |
+| Allocate | Assign a New job to a rider on an active Plasma shift |
+| Collect | Record that a rider has picked up the package (with receipt and seal details) |
+| Deliver | Record that the package reached its destination and who received it |
+| Relay job | A delivery split into legs between handover (rendezvous) points; each leg is allocated and progressed separately |
+| Rendezvous point | A handover location where one relay leg ends and the next begins |
+| Directory | Searchable volunteer list (from Three Rings) and bike log (Plasma mileage history) exposed to all Plasma roles |
+| Bike log | Plasma record of charity bikes and their mileage readings from shift logoff |
 | Sail | Docker-based local development environment for the API (no need to install PHP on the laptop) |
 | Auth audit log | Record of failed sign-in attempts kept for security review |
 | Staging | Non-production Google Cloud project used to try changes safely (`plasma-staging-502110`) |

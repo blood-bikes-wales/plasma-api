@@ -15,7 +15,9 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
 | Three Rings client | Read-only volunteer/role/planned-rota fetches + cache | `app/Services/ThreeRings/` |
 | Operational shifts | Plasma-owned logon/logoff with bike mileage | `app/Services/Shifts/` |
-| Delivery jobs | Create jobs in New; list active and completed | `app/Services/Jobs/` |
+| Delivery jobs | Create, relay, lifecycle actions, list by scope | `app/Services/Jobs/` |
+| Volunteer directory | Search Three Rings volunteers (read-only) | `app/Services/Directory/VolunteerDirectoryService.php` |
+| Bike log | Search bikes; detail with mileage history | `app/Services/Bikes/BikeLogService.php` |
 | CORS | Allow SPA origins | `config/cors.php` |
 | GCP hosting | Cloud Run, Cloud SQL, Secret Manager, WIF | `infrastructure/` |
 
@@ -35,8 +37,12 @@ flowchart LR
   Shifts --> Mileage[(mileage_readings)]
   Api --> Jobs[DeliveryJobService]
   Jobs --> DeliveryJobs[(delivery_jobs)]
+  Api --> Directory[VolunteerDirectoryService]
+  Api --> BikeLog[BikeLogService]
+  BikeLog --> Bikes
+  Directory --> ThreeRingsClient
   Shifts -->|"volunteer lookup, never writes"| ThreeRingsClient
-  ThreeRingsClient -->|"not HTTP-exposed yet"| ThreeR[ThreeRingsAPI]
+  ThreeRingsClient --> ThreeR[ThreeRingsAPI]
   ThreeRingsClient --> Cache[(cache)]
 ```
 
@@ -56,7 +62,11 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 - `app/Enums/AuthFailureReason.php` — audit failure reasons
 - `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, planned rota); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
-- `app/Services/Jobs/DeliveryJobService.php` — create a delivery job in New; list active and completed jobs
+- `app/Services/Jobs/DeliveryJobService.php` — create, relay, allocate/collect/deliver/cancel; list active and completed top-level jobs
+- `app/Services/Jobs/RelayJobStatusAggregator.php` — derive parent relay status from leg progress
+- `app/Services/Directory/VolunteerDirectoryService.php` — filter cached Three Rings volunteers by name, role, area
+- `app/Services/Bikes/BikeLogService.php` — search bikes by registration; load mileage history
+- `app/Http/Controllers/Api/DirectoryController.php` — directory HTTP surface (`view-directory`)
 - `app/Authorization/CapabilityMatrix.php` — which roles may use each named capability; admin is expanded in `Role::expand()`
 - `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, `delivery_jobs`, cache/jobs tables
 
@@ -70,12 +80,20 @@ Do not document routes that are not registered.
 | GET | `/api/` | none | `{ "name": <app.name> }` |
 | GET | `/api/me` | `auth.google` | Authenticated `User` JSON (including empty `roles`) |
 | GET | `/api/shifts/active` | `auth.google` + any Plasma role | `{ "data": [ ActiveShift, … ] }` camelCase |
-| GET | `/api/bikes` | `auth.google` + controller (admin via hierarchy) | `{ "data": [ { id, registration, lastRecordedMileage } ] }` |
-| GET | `/api/volunteers` | `auth.google` + controller (admin via hierarchy) | `{ "data": [ { id, name } ] }` from Three Rings |
+| GET | `/api/bikes` | `auth.google` + controller (`view-bikes`) | `{ "data": [ { id, registration, lastRecordedMileage } ] }` — all bikes for shift logon |
+| GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name } ] }` from Three Rings — rider picker at logon |
+| GET | `/api/directory/volunteers` | `auth.google` + any Plasma role (`view-directory`) | Volunteer search; query `q`, `role`, `area` (all optional; empty if all blank) |
+| GET | `/api/directory/bikes` | `auth.google` + any Plasma role (`view-directory`) | Bike search by registration; query `q` (empty if blank) |
+| GET | `/api/directory/bikes/{id}` | `auth.google` + any Plasma role (`view-directory`) | Bike detail with `mileageHistory` |
 | POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …) |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults? }` |
 | GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled) |
-| POST | `/api/jobs` | `auth.google` + controller (admin via hierarchy) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`) |
+| POST | `/api/jobs` | `auth.google` + controller (`create-job`) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`); 201 |
+| POST | `/api/jobs/{id}/relay` | `auth.google` + controller (`create-job`) | Convert a New job to relay; body `{ rendezvousPoints: [ Places location, … ] }`; creates legs `{reference}-L{n}` |
+| POST | `/api/jobs/{id}/actions/allocate` | `auth.google` + controller (`create-job`) | New → Allocated; body `{ shiftId }` (active operational shift) |
+| POST | `/api/jobs/{id}/actions/collect` | `auth.google` + controller (`create-job`) | Allocated → Collected; body `{ contentsConfirmed, suitablySealed, receiptNumber, sealNumber?, collectedAt? }` |
+| POST | `/api/jobs/{id}/actions/deliver` | `auth.google` + controller (`create-job`) | Collected → Delivered; body `{ recipient, deliveredAt? }` |
+| POST | `/api/jobs/{id}/cancel` | `auth.google` + controller (`create-job`) | Cancel job (or relay parent + open legs); body `{ reason? }` |
 
 ## Persistence and caching
 
@@ -101,7 +119,15 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 - Invalid or missing Bearer token → 401; audit + `auth` log channel
 - Unverified email or wrong Workspace domain → 403
 - Signed-in user with no Plasma roles → 200 on `/api/me`, 403 on every other protected route
-- Logon/logoff, bikes, volunteers, or job creation without controller (or admin) → 403
+- Logon/logoff, bikes, volunteers, job writes, or relay without controller (or admin) → 403
+- Directory routes without any Plasma role → 403
+- Directory volunteer search with all query params blank → empty result (not an error)
+- Directory bike search with blank `q` → empty result
+- Volunteer directory when Three Rings is unavailable → 503
+- Job action on wrong status (e.g. collect when New) → 422 with allowed actions
+- Lifecycle actions on a relay parent (not a leg) → 422 — manage legs individually
+- Relay conversion when job is not New, already relay, or is a leg → 422
+- Allocate with inactive or unknown shift → 422
 - Client `X-Active-Role` (and similar) headers are ignored; roles come only from Three Rings + `is_admin`
 - Duplicate active shift (same rider or bike), unknown rider, or mileage variance without a reason → 422 with field errors
 - Job locations missing place ID, coordinates, or address → 422 with field errors
