@@ -2,13 +2,16 @@
 
 namespace App\Models;
 
+use App\Enums\JobAction;
 use App\Enums\JobStatus;
 use Database\Factories\DeliveryJobFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'reference',
@@ -40,6 +43,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'delivered_at',
     'cancellation_reason',
     'cancelled_at',
+    'parent_job_id',
+    'leg_number',
+    'is_relay',
 ])]
 class DeliveryJob extends Model
 {
@@ -61,6 +67,8 @@ class DeliveryJob extends Model
             'allocated_rider_id' => 'integer',
             'contents_confirmed' => 'boolean',
             'suitably_sealed' => 'boolean',
+            'is_relay' => 'boolean',
+            'leg_number' => 'integer',
             'allocated_at' => 'datetime',
             'collected_at' => 'datetime',
             'delivered_at' => 'datetime',
@@ -82,5 +90,65 @@ class DeliveryJob extends Model
     public function operationalShift(): BelongsTo
     {
         return $this->belongsTo(OperationalShift::class);
+    }
+
+    /**
+     * @return BelongsTo<DeliveryJob, $this>
+     */
+    public function parentJob(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_job_id');
+    }
+
+    /**
+     * @return HasMany<DeliveryJob, $this>
+     */
+    public function legs(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_job_id')->orderBy('leg_number');
+    }
+
+    public function isRelayParent(): bool
+    {
+        return (bool) $this->is_relay;
+    }
+
+    public function isRelayLeg(): bool
+    {
+        return $this->parent_job_id !== null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function allowedActionNames(): array
+    {
+        if ($this->isRelayParent()) {
+            if ($this->status === JobStatus::Cancelled || $this->status === JobStatus::Delivered) {
+                return [];
+            }
+
+            return [JobAction::Cancel->value];
+        }
+
+        $actions = array_map(
+            static fn (JobAction $action): string => $action->value,
+            JobAction::forStatus($this->status),
+        );
+
+        if ($this->parent_job_id === null && $this->status === JobStatus::New) {
+            $actions[] = 'relay';
+        }
+
+        return $actions;
+    }
+
+    /**
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeTopLevel(Builder $query): Builder
+    {
+        return $query->whereNull('parent_job_id');
     }
 }
