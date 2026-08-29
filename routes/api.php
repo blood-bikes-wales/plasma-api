@@ -44,5 +44,9 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
 
     Route::middleware('access:create-job')->group(function () {
         Route::post('/jobs', [JobController::class, 'store'])->name('jobs.store');
+        Route::post('/jobs/{job}/actions/{action}', [JobController::class, 'action'])
+            ->whereIn('action', ['allocate', 'collect', 'deliver'])
+            ->name('jobs.action');
+        Route::post('/jobs/{job}/cancel', [JobController::class, 'cancel'])->name('jobs.cancel');
     });
 });

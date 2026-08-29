@@ -27,6 +27,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'contents',
     'service_areas',
     'created_by_user_id',
+    'operational_shift_id',
+    'allocated_rider_id',
+    'allocated_rider_name',
+    'allocated_at',
+    'contents_confirmed',
+    'suitably_sealed',
+    'seal_number',
+    'receipt_number',
+    'collected_at',
+    'recipient',
+    'delivered_at',
+    'cancellation_reason',
+    'cancelled_at',
 ])]
 class DeliveryJob extends Model
 {
@@ -45,6 +58,13 @@ class DeliveryJob extends Model
             'delivery_latitude' => 'float',
             'delivery_longitude' => 'float',
             'service_areas' => 'array',
+            'allocated_rider_id' => 'integer',
+            'contents_confirmed' => 'boolean',
+            'suitably_sealed' => 'boolean',
+            'allocated_at' => 'datetime',
+            'collected_at' => 'datetime',
+            'delivered_at' => 'datetime',
+            'cancelled_at' => 'datetime',
         ];
     }
 
@@ -54,5 +74,13 @@ class DeliveryJob extends Model
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
+    }
+
+    /**
+     * @return BelongsTo<OperationalShift, $this>
+     */
+    public function operationalShift(): BelongsTo
+    {
+        return $this->belongsTo(OperationalShift::class);
     }
 }
