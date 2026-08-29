@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -46,9 +47,9 @@ class VolunteerIndexTest extends TestCase
                     [
                         'id' => 100001,
                         'name' => 'Alex Morgan',
-                        'roles' => [['role' => ['id' => 5001, 'name' => 'Rider']]],
+                        'roles' => [['role' => ['id' => 5002, 'name' => 'Controller']]],
                         'volunteer_properties' => [
-                            ['volunteer_property' => ['name' => 'Email', 'value' => 'alex@bloodbikes.wales']],
+                            ['volunteer_property' => ['name' => 'Email', 'value' => 'rider@bloodbikes.wales']],
                         ],
                     ],
                 ],
@@ -71,6 +72,11 @@ class VolunteerIndexTest extends TestCase
             'www.3r.org.uk/directory.json*' => Http::response('unavailable', 503),
         ]);
         $this->mockVerifiedClaims();
+
+        User::factory()->admin()->create([
+            'email' => 'rider@bloodbikes.wales',
+            'google_id' => null,
+        ]);
 
         $this->withToken('valid-token')
             ->getJson('/api/volunteers')
