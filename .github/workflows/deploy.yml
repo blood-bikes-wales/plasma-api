@@ -84,6 +84,10 @@ jobs:
             echo "Missing secret GOOGLE_CLIENT_ID for environment ${WORKSPACE}" >&2
             exit 1
           fi
+          if [ -z "${TF_VAR_three_rings_api_key}" ]; then
+            echo "Missing secret THREE_RINGS_API_KEY for environment ${WORKSPACE}" >&2
+            exit 1
+          fi
           terraform apply -auto-approve \
             -var-file="environments/${WORKSPACE}.tfvars" \
             -var="container_image=${IMAGE}"

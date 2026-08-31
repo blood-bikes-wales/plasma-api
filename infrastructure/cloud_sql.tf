@@ -24,7 +24,9 @@ resource "google_sql_database_instance" "main" {
 
     ip_configuration {
       ipv4_enabled = true
-      ssl_mode     = "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
+      # Cloud Run connects via the built-in Cloud SQL connector (encrypted Unix
+      # socket). ENCRYPTED_ONLY blocks unencrypted TCP to the public IP.
+      ssl_mode = "ENCRYPTED_ONLY"
     }
 
     maintenance_window {

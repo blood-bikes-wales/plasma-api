@@ -2,5 +2,5 @@
 # CI passes these as -var from GitHub Environment secrets.
 
 google_client_id     = "xxxx.apps.googleusercontent.com"
-three_rings_api_key  = ""
+three_rings_api_key  = "your-three-rings-api-key"
 # frontend_url_override = "https://plasma-controller-xxxxx-ew.a.run.app"
