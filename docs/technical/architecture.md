@@ -2,7 +2,7 @@
 
 ## Summary
 
-Plasma API is a thin Laravel JSON layer in front of Google Workspace identity and (soon) Three Rings volunteer data. The Plasma Controller SPA obtains a Google ID token and calls `/api/*` with `Authorization: Bearer …`. Middleware verifies the token, enforces the Workspace domain, and provisions a local `User`. Controllers stay thin; business rules belong in services.
+Plasma API is a thin Laravel JSON layer in front of Google Workspace identity and Three Rings volunteer data. The Plasma Controller SPA obtains a Google ID token and calls `/api/*` with `Authorization: Bearer …`. Middleware verifies the token, enforces the Workspace domain, provisions a local `User`, then resolves Plasma roles from the cached Three Rings directory by matching the user's email. Controllers stay thin; business rules belong in services.
 
 ## Components
 
@@ -11,9 +11,11 @@ Plasma API is a thin Laravel JSON layer in front of Google Workspace identity an
 | HTTP API | Public JSON routes under `/api` | `routes/api.php`, `bootstrap/app.php` |
 | Access control | Capability matrix + admin hierarchy | `app/Authorization/`, `EnsureHasCapability` (`access`) |
 | Workspace auth middleware | Verify ID token, domain, provision user | `app/Http/Middleware/AuthenticateGoogleWorkspace.php` |
+| Role attachment middleware | Resolve Plasma roles from Three Rings directory | `app/Http/Middleware/AttachUserRoles.php` |
+| Role resolver | Match email to volunteer; map Three Rings role names | `app/Services/Roles/UserRoleResolver.php` |
 | ID token verifier | `Google\Client::verifyIdToken` | `app/Services/Auth/GoogleApiClientIdTokenVerifier.php` |
 | User + audit models | Persist identity; log auth failures | `app/Models/User.php`, `app/Models/AuthAuditLog.php` |
-| Three Rings client | Read-only volunteer/role/planned-rota fetches + cache | `app/Services/ThreeRings/` |
+| Three Rings client | Read-only directory and shift fetches + cache | `app/Services/ThreeRings/` |
 | Operational shifts | Plasma-owned logon/logoff with bike mileage | `app/Services/Shifts/` |
 | Delivery jobs | Create, relay, lifecycle actions, list by scope | `app/Services/Jobs/` |
 | Volunteer directory | Search Three Rings volunteers (read-only) | `app/Services/Directory/VolunteerDirectoryService.php` |
@@ -30,6 +32,9 @@ flowchart LR
   AuthMw --> Verifier[GoogleIdTokenVerifier]
   Verifier --> Google[GoogleTokenEndpoint]
   AuthMw --> Users[(users)]
+  AuthMw --> RolesMw[AttachUserRoles]
+  RolesMw --> Resolver[UserRoleResolver]
+  Resolver --> ThreeRingsClient
   AuthMw -->|"on failure"| Audit[(auth_audit_logs)]
   Api --> Shifts[OperationalShiftService]
   Shifts --> Bikes[(bikes)]
@@ -46,13 +51,16 @@ flowchart LR
   ThreeRingsClient --> Cache[(cache)]
 ```
 
-### Auth sequence
+### Auth and role sequence
 
 1. SPA sends `Authorization: Bearer <Google ID token>` to a route using `auth.google`.
 2. Middleware reads `GOOGLE_CLIENT_ID` / `GOOGLE_ALLOWED_DOMAIN` from config (`config/services.php`, `config/auth.php`).
 3. Verifier checks signature and `aud`; middleware requires `email_verified` and Workspace domain (`hd` + email suffix).
 4. User is linked/created by `google_id` (fallback: email); `Auth::setUser(...)`.
-5. Failures write `AuthAuditLog` and `storage/logs/auth.log` (`config/logging.php`); 401 for missing/invalid token, 403 for unverified or out-of-domain.
+5. `AttachUserRoles` runs on the `auth.google` group: fetches cached `GET /directory.json`, finds the volunteer whose `email` or `email_alt` matches the signed-in user, maps Three Rings role names to Plasma roles (`controller`, `rider`, `driver`, `trustee`), and adds `admin` when `users.is_admin` is true.
+6. Resolved roles are attached to the request and exposed on `/api/me` as a `roles` string array. The API does not return a separate `is_admin` flag.
+7. Failures in step 1–4 write `AuthAuditLog` and `storage/logs/auth.log` (`config/logging.php`); 401 for missing/invalid token, 403 for unverified or out-of-domain.
+8. Three Rings outage during role resolution yields empty Three Rings-derived roles (admin still applies if set locally).
 
 Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 
@@ -60,7 +68,9 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 
 - `app/Contracts/GoogleIdTokenVerifier.php` — verifier interface; bound in `app/Providers/AppServiceProvider.php`
 - `app/Enums/AuthFailureReason.php` — audit failure reasons
-- `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (directory, roles, planned rota); rate limit and fresh/stale cache in `config/services.php` → `three_rings`
+- `app/Services/ThreeRings/ThreeRingsClient.php` — GET-only client (`/directory.json`, `/shift.json`); rate limit, configurable timeouts, fresh/stale cache, structured logging; never writes to Three Rings (BR-005)
+- `app/Services/ThreeRings/Data/Volunteer.php` — Parses live directory volunteer records (code-keyed properties, regional role names)
+- `app/Enums/Role.php` — Maps Three Rings role names to Plasma roles (prefix match for regional riders/trustees; exact match for Controller)
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
 - `app/Services/Jobs/DeliveryJobService.php` — create, relay, allocate/collect/deliver/cancel; list active and completed top-level jobs
 - `app/Services/Jobs/RelayJobStatusAggregator.php` — derive parent relay status from leg progress
@@ -78,7 +88,7 @@ Do not document routes that are not registered.
 |--------|------|------|----------|
 | GET | `/up` | none | Health |
 | GET | `/api/` | none | `{ "name": <app.name> }` |
-| GET | `/api/me` | `auth.google` | Authenticated `User` JSON (including empty `roles`) |
+| GET | `/api/me` | `auth.google` | Authenticated user JSON with `roles` array (no `is_admin` field) |
 | GET | `/api/shifts/active` | `auth.google` + any Plasma role | `{ "data": [ ActiveShift, … ] }` camelCase |
 | GET | `/api/bikes` | `auth.google` + controller (`view-bikes`) | `{ "data": [ { id, registration, lastRecordedMileage } ] }` — all bikes for shift logon |
 | GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name } ] }` from Three Rings — rider picker at logon |
@@ -103,7 +113,7 @@ Do not document routes that are not registered.
 | SQLite `:memory:` | PHPUnit |
 | Cache store (`database`) | Three Rings fresh/stale TTLs; shared across Cloud Run instances |
 
-Three Rings cache lifetimes (seconds) live under `config/services.php` → `three_rings.cache` (volunteers, roles, shifts). Rate budget: 15 attempts / 60s fixed window (comments explain BR-005 GET-only and BR-008 stale fallback).
+Three Rings cache lifetimes (seconds) live under `config/services.php` → `three_rings.cache` (volunteers/directory, shifts). HTTP timeouts: `THREE_RINGS_TIMEOUT_SECONDS` (default 30), `THREE_RINGS_CONNECT_TIMEOUT_SECONDS` (default 5). Rate budget: 15 attempts / 60s fixed window (comments explain BR-005 GET-only and BR-008 stale fallback).
 
 ## Integrations
 
@@ -111,7 +121,7 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 |--------|-----------|---------|
 | Plasma Controller SPA | Inbound (CORS + Bearer token) | UI; origins from `FRONTEND_URL` |
 | Google OAuth / Workspace | Inbound token verification | Sign-in identity (`GOOGLE_CLIENT_ID`, `GOOGLE_ALLOWED_DOMAIN`) |
-| Three Rings (`3r.org.uk`) | Outbound GET | Volunteers, roles, planned rota (`THREE_RINGS_*`) — not written back |
+| Three Rings (`3r.org.uk`) | Outbound GET | Volunteer directory (`directory.json`) and shifts — read-only; roles taken from each volunteer record, not a separate admin API |
 | GCP Secret Manager | Config storage | `APP_KEY`, DB password, OAuth client ID, Three Rings API key |
 
 ## Failure modes
@@ -128,7 +138,7 @@ Three Rings cache lifetimes (seconds) live under `config/services.php` → `thre
 - Lifecycle actions on a relay parent (not a leg) → 422 — manage legs individually
 - Relay conversion when job is not New, already relay, or is a leg → 422
 - Allocate with inactive or unknown shift → 422
-- Client `X-Active-Role` (and similar) headers are ignored; roles come only from Three Rings + `is_admin`
+- Client `X-Active-Role` (and similar) headers are ignored; roles come only from Three Rings directory lookup plus local `users.is_admin` (surfaced as the `admin` role)
 - Duplicate active shift (same rider or bike), unknown rider, or mileage variance without a reason → 422 with field errors
 - Job locations missing place ID, coordinates, or address → 422 with field errors
 - Unknown job list scope (not `active` or `completed`) → 404

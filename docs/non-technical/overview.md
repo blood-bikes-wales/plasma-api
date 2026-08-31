@@ -17,11 +17,12 @@ End users do not use this API directly in a browser; they use the Plasma Control
 1. Someone from the charity signs in with their Blood Bikes Wales Google account in the Plasma Controller app.
 2. The app sends a short-lived Google login token to Plasma API.
 3. The API checks the token is genuine and that the person belongs to the allowed Workspace domain.
-4. If checks pass, the API recognises them as a user; if not, access is refused and the attempt can be audited.
-5. Controllers can log riders on and off shift in Plasma (who is on duty, which bike, mileage). Volunteer names still come from Three Rings; Plasma never updates the Three Rings rota.
-6. Controllers can create a delivery job with validated collection and delivery locations. New jobs start in the New state. Controllers can allocate jobs to active riders, record collection and delivery, cancel jobs, or convert a New job into a relay with handover points.
-7. Signed-in riders, controllers, and other Plasma roles can list active and completed jobs.
-8. All Plasma roles can search the volunteer directory (from Three Rings) and the bike log (Plasma-owned bikes and mileage history).
+4. If checks pass, the API recognises them as a user and looks up their volunteer record in Three Rings (by email) to decide which Plasma roles they have (rider, controller, and so on). Local admin access appears as an `admin` role in the API response.
+5. If checks fail, access is refused and the attempt can be audited.
+6. Controllers can log riders on and off shift in Plasma (who is on duty, which bike, mileage). Volunteer names still come from Three Rings; Plasma never updates the Three Rings rota.
+7. Controllers can create a delivery job with validated collection and delivery locations. New jobs start in the New state. Controllers can allocate jobs to active riders, record collection and delivery, cancel jobs, or convert a New job into a relay with handover points.
+8. Signed-in riders, controllers, and other Plasma roles can list active and completed jobs.
+9. All Plasma roles can search the volunteer directory (from Three Rings) and the bike log (Plasma-owned bikes and mileage history).
 
 ## What success looks like
 
@@ -38,7 +39,7 @@ End users do not use this API directly in a browser; they use the Plasma Control
 ## Risks and limitations
 
 - Staging and production run on Google Cloud Run with a managed PostgreSQL database; a first-time laptop Terraform apply is required before GitHub can deploy
-- The volunteer directory depends on Three Rings being reachable; if it is down, directory search returns an error (logon may still use cached data)
+- The volunteer directory depends on Three Rings being reachable; the full directory fetch can take several seconds and is cached for about an hour. If Three Rings is down, role lookup and directory search may fall back to older cached data or return empty roles / an error
 - Access depends on correct Google OAuth setup (client ID and allowed domain); misconfiguration blocks everyone or the wrong people
 - Three Rings is read-only from this system’s perspective — Plasma API does not update rotas there
 
