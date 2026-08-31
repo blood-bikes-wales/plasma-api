@@ -12,7 +12,9 @@ Terms used when talking about this project. Keep definitions short and free of i
 | OAuth client | Google Cloud setting that identifies the Controller app for sign-in; its ID must match what the API expects |
 | Three Rings (3R) | External system of record for volunteers, roles, and shifts (`3r.org.uk`) |
 | Volunteer | A person recorded in Three Rings who may take part in blood bike duties |
-| Role | A Three Rings permission or duty type (e.g. rider, controller) |
+| Role (Three Rings) | A duty or permission label in Three Rings (e.g. Controller, Rider - Milk, Trustees). Plasma maps these to its own role names |
+| Plasma role | What the API exposes in `/api/me` (`admin`, `controller`, `rider`, `driver`, `trustee`) after matching the user's email to the Three Rings directory |
+| Admin role | Local flag on a user that grants the `admin` Plasma role (and implied access to other capabilities); not stored in Three Rings |
 | Shift / rota | Scheduled (planned) duty entries from Three Rings; Plasma does not write these |
 | Operational shift | Plasma-owned on-duty session: a rider logged on with a bike and mileage |
 | Delivery job | A blood-product (or similar) transport request owned by Plasma, from New through collect/deliver |
