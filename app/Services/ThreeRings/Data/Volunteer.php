@@ -28,10 +28,39 @@ final readonly class Volunteer
         return new self(
             id: (int) ($data['id'] ?? 0),
             name: (string) ($data['name'] ?? ''),
-            email: self::emailFrom($properties),
+            email: self::primaryEmailFrom($properties),
             roles: self::mapRoleNames($data['roles'] ?? []),
             properties: $properties,
         );
+    }
+
+    public function matchesEmail(string $email): bool
+    {
+        $needle = Str::lower(trim($email));
+
+        foreach (['email', 'email_alt'] as $code) {
+            $value = $this->properties[$code] ?? null;
+
+            if (is_string($value) && Str::lower($value) === $needle) {
+                return true;
+            }
+        }
+
+        foreach ($this->properties as $name => $value) {
+            if (! is_string($value) || $value === '') {
+                continue;
+            }
+
+            if (! Str::contains((string) $name, 'email', ignoreCase: true)) {
+                continue;
+            }
+
+            if (Str::lower($value) === $needle) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function area(): ?string
@@ -71,7 +100,7 @@ final readonly class Volunteer
 
     /**
      * Flatten Three Rings' nested volunteer_properties entries into a
-     * name => value map, tolerating both wrapped and unwrapped entries.
+     * code/name => value map, tolerating wrapped, flat, and code-keyed entries.
      *
      * @param  array<int, array<string, mixed>>  $entries
      * @return array<string, mixed>
@@ -81,10 +110,24 @@ final readonly class Volunteer
         $properties = [];
 
         foreach ($entries as $entry) {
-            $property = $entry['volunteer_property'] ?? $entry;
+            if (isset($entry['volunteer_property']) && is_array($entry['volunteer_property'])) {
+                self::storeProperty($properties, $entry['volunteer_property']);
 
-            if (isset($property['name'])) {
-                $properties[(string) $property['name']] = $property['value'] ?? null;
+                continue;
+            }
+
+            if (isset($entry['name']) || isset($entry['code'])) {
+                self::storeProperty($properties, $entry);
+
+                continue;
+            }
+
+            foreach ($entry as $code => $meta) {
+                if (! is_array($meta) || ! array_key_exists('value', $meta)) {
+                    continue;
+                }
+
+                $properties[(string) $code] = $meta['value'];
             }
         }
 
@@ -93,11 +136,38 @@ final readonly class Volunteer
 
     /**
      * @param  array<string, mixed>  $properties
+     * @param  array<string, mixed>  $property
      */
-    private static function emailFrom(array $properties): ?string
+    private static function storeProperty(array &$properties, array $property): void
     {
+        $value = $property['value'] ?? null;
+
+        if (isset($property['code'])) {
+            $properties[(string) $property['code']] = $value;
+        }
+
+        if (isset($property['name'])) {
+            $properties[(string) $property['name']] = $value;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $properties
+     */
+    private static function primaryEmailFrom(array $properties): ?string
+    {
+        $email = $properties['email'] ?? null;
+
+        if (is_string($email) && $email !== '') {
+            return $email;
+        }
+
         foreach ($properties as $name => $value) {
-            if (Str::contains($name, 'email', ignoreCase: true) && is_string($value) && $value !== '') {
+            if ($name === 'email_alt') {
+                continue;
+            }
+
+            if (Str::contains((string) $name, 'email', ignoreCase: true) && is_string($value) && $value !== '') {
                 return $value;
             }
         }

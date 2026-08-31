@@ -1,7 +1,0 @@
-{
-    "roles": [
-        {"role": {"id": 5001, "name": "Rider"}},
-        {"role": {"id": 5002, "name": "Controller"}},
-        {"role": {"id": 5003, "name": "Driver"}}
-    ]
-}

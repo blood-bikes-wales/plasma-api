@@ -119,6 +119,50 @@ class UserRoleResolverTest extends TestCase
         $this->assertSame([Role::Admin], $roles);
     }
 
+    public function test_matches_volunteer_by_alternate_email(): void
+    {
+        $this->fakeDirectory([
+            [
+                'id' => 4,
+                'name' => 'Alt Email Rider',
+                'roles' => [
+                    ['id' => 13014, 'name' => 'Rider - Carms', 'suffix' => ''],
+                ],
+                'volunteer_properties' => [
+                    ['email' => ['value' => 'primary@bloodbikes.wales']],
+                    ['email_alt' => ['value' => 'alt@bloodbikes.wales']],
+                ],
+            ],
+        ]);
+
+        $user = new User(['email' => 'alt@bloodbikes.wales', 'is_admin' => false]);
+        $roles = $this->resolver()->forUser($user);
+
+        $this->assertSame([Role::Rider], $roles);
+    }
+
+    public function test_maps_regional_rider_and_controller_roles(): void
+    {
+        $this->fakeDirectory([
+            [
+                'id' => 5,
+                'name' => 'Regional Controller',
+                'roles' => [
+                    ['id' => 12933, 'name' => 'Controller', 'suffix' => ''],
+                    ['id' => 13014, 'name' => 'Rider - Milk', 'suffix' => ''],
+                ],
+                'volunteer_properties' => [
+                    ['email' => ['value' => 'regional@bloodbikes.wales']],
+                ],
+            ],
+        ]);
+
+        $user = new User(['email' => 'regional@bloodbikes.wales', 'is_admin' => false]);
+        $roles = $this->resolver()->forUser($user);
+
+        $this->assertSame([Role::Controller, Role::Rider], $roles);
+    }
+
     private function resolver(): UserRoleResolver
     {
         return $this->app->make(UserRoleResolver::class);
