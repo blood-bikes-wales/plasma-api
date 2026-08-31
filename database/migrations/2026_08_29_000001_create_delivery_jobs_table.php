@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Migration as MigrationHelper;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -28,9 +29,11 @@ return new class extends Migration
             $table->decimal('delivery_longitude', 10, 7);
             $table->text('contents');
             $table->json('service_areas');
-            $table->foreignId('created_by_user_id')->constrained('users')->restrictOnDelete();
+            $table->foreignUuid('created_by_user_id')->constrained('users')->restrictOnDelete();
             $table->timestamps();
         });
+
+        MigrationHelper::setUuidPrimaryKeyDefault('delivery_jobs');
     }
 
     /**
