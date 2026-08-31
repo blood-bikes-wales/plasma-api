@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Services\ThreeRings\Data\Volunteer;
 use App\Services\ThreeRings\Exceptions\ThreeRingsException;
 use App\Services\ThreeRings\ThreeRingsClient;
-use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -90,11 +89,8 @@ final class UserRoleResolver
             return null;
         }
 
-        $needle = Str::lower($email);
-
         return $volunteers->first(
-            static fn (Volunteer $volunteer): bool => is_string($volunteer->email)
-                && Str::lower($volunteer->email) === $needle,
+            static fn (Volunteer $volunteer): bool => $volunteer->matchesEmail($email),
         );
     }
 }

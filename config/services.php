@@ -46,6 +46,14 @@ return [
         'contact_email' => env('THREE_RINGS_CONTACT_EMAIL'),
 
         /*
+         * The full volunteer directory can exceed 600 KB and routinely takes
+         * longer than five seconds to generate. Keep the read timeout above
+         * that observed latency with headroom for slower responses.
+         */
+        'timeout_seconds' => (int) env('THREE_RINGS_TIMEOUT_SECONDS', 30),
+        'connect_timeout_seconds' => (int) env('THREE_RINGS_CONNECT_TIMEOUT_SECONDS', 5),
+
+        /*
          * Three Rings allows at most 30 requests in any sliding 60-second
          * window. The limiter uses a fixed window, and two fixed windows can
          * straddle a sliding one (up to 2N requests), so 15 per fixed window
@@ -63,7 +71,6 @@ return [
          */
         'cache' => [
             'volunteers' => ['fresh' => 3600, 'stale' => 86400],
-            'roles' => ['fresh' => 21600, 'stale' => 172800],
             'shifts' => ['fresh' => 300, 'stale' => 3600],
         ],
     ],

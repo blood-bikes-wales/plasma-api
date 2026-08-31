@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Services\ThreeRings;
 
-use App\Services\ThreeRings\Data\Role;
 use App\Services\ThreeRings\Data\Shift;
 use App\Services\ThreeRings\Data\Volunteer;
 use App\Services\ThreeRings\Exceptions\ThreeRingsRateLimitedException;
@@ -16,6 +15,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
+use Mockery;
 use Tests\TestCase;
 
 class ThreeRingsClientTest extends TestCase
@@ -29,10 +29,11 @@ class ThreeRingsClientTest extends TestCase
             'base_url' => 'https://www.3r.org.uk',
             'key' => 'test-key',
             'contact_email' => 'dev@bloodbikes.wales',
+            'timeout_seconds' => 30,
+            'connect_timeout_seconds' => 5,
             'rate_limit' => ['max_attempts' => 15, 'decay_seconds' => 60],
             'cache' => [
                 'volunteers' => ['fresh' => 3600, 'stale' => 86400],
-                'roles' => ['fresh' => 21600, 'stale' => 172800],
                 'shifts' => ['fresh' => 300, 'stale' => 3600],
             ],
         ]);
@@ -66,7 +67,7 @@ class ThreeRingsClientTest extends TestCase
         $this->assertSame(100001, $volunteers[0]->id);
         $this->assertSame('Alex Morgan', $volunteers[0]->name);
         $this->assertSame('alex.morgan@example.com', $volunteers[0]->email);
-        $this->assertSame(['Rider', 'Controller'], $volunteers[0]->roles);
+        $this->assertSame(['Rider - Milk', 'Controller'], $volunteers[0]->roles);
 
         $this->assertSame(100002, $volunteers[1]->id);
         $this->assertNull($volunteers[1]->email);
@@ -83,20 +84,6 @@ class ThreeRingsClientTest extends TestCase
             return str_contains($request->url(), '/directory.json')
                 && str_contains($request->url(), 'volunteer_filter=Rider');
         });
-    }
-
-    public function test_fetches_and_maps_roles(): void
-    {
-        $this->fakeThreeRings();
-
-        $roles = $this->client()->roles();
-
-        $this->assertCount(3, $roles);
-        $this->assertContainsOnlyInstancesOf(Role::class, $roles);
-        $this->assertSame(5001, $roles[0]->id);
-        $this->assertSame('Rider', $roles[0]->name);
-
-        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/admin/roles.json'));
     }
 
     public function test_fetches_shifts_with_date_range_params(): void
@@ -197,7 +184,12 @@ class ThreeRingsClientTest extends TestCase
 
         $this->assertCount(2, $volunteers);
         Http::assertSentCount(3); // 1 success + 2 failed retry attempts.
-        Log::shouldHaveReceived('warning')->once();
+        Log::shouldHaveReceived('warning')
+            ->with('Three Rings request failed, retrying.', Mockery::type('array'))
+            ->twice();
+        Log::shouldHaveReceived('warning')
+            ->with('Three Rings unavailable, serving stale cache.', Mockery::type('array'))
+            ->once();
     }
 
     public function test_connection_failure_serves_stale_cache(): void
@@ -213,7 +205,12 @@ class ThreeRingsClientTest extends TestCase
         $volunteers = $client->volunteers();
 
         $this->assertCount(2, $volunteers);
-        Log::shouldHaveReceived('warning')->once();
+        Log::shouldHaveReceived('warning')
+            ->with('Three Rings request failed, retrying.', Mockery::type('array'))
+            ->once();
+        Log::shouldHaveReceived('warning')
+            ->with('Three Rings unavailable, serving stale cache.', Mockery::type('array'))
+            ->once();
     }
 
     public function test_outage_without_cache_throws_unavailable_and_logs_error(): void
@@ -251,10 +248,9 @@ class ThreeRingsClientTest extends TestCase
         $client = $this->client();
 
         $client->volunteers();
-        $client->roles();
         $client->shifts(CarbonImmutable::parse('2026-07-24'), CarbonImmutable::parse('2026-07-25'));
 
-        Http::assertSentCount(3);
+        Http::assertSentCount(2);
 
         $this->assertTrue(
             collect(Http::recorded())->every(fn (array $pair): bool => $pair[0]->method() === 'GET'),
@@ -271,7 +267,6 @@ class ThreeRingsClientTest extends TestCase
     {
         Http::fake([
             'www.3r.org.uk/directory.json*' => Http::response($this->fixture('directory')),
-            'www.3r.org.uk/admin/roles.json*' => Http::response($this->fixture('roles')),
             'www.3r.org.uk/shift.json*' => Http::response($this->fixture('shifts')),
         ]);
     }

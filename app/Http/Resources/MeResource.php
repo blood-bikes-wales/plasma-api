@@ -29,7 +29,6 @@ class MeResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'email_verified_at' => $this->email_verified_at,
-            'is_admin' => (bool) $this->is_admin,
             'roles' => array_map(
                 static fn (Role $role): string => $role->value,
                 is_array($roles) ? $roles : [],

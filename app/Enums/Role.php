@@ -18,13 +18,25 @@ enum Role: string
      */
     public static function tryFromThreeRingsName(string $name): ?self
     {
-        return match (mb_strtolower(trim($name))) {
-            'controller' => self::Controller,
-            'driver' => self::Driver,
-            'rider' => self::Rider,
-            'trustee', 'trustees' => self::Trustee,
-            default => null,
-        };
+        $normalised = mb_strtolower(trim($name));
+
+        if ($normalised === 'controller') {
+            return self::Controller;
+        }
+
+        if (str_starts_with($normalised, 'rider')) {
+            return self::Rider;
+        }
+
+        if (str_starts_with($normalised, 'driver')) {
+            return self::Driver;
+        }
+
+        if (str_starts_with($normalised, 'trustee')) {
+            return self::Trustee;
+        }
+
+        return null;
     }
 
     /**

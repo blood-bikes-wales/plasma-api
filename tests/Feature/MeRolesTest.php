@@ -54,7 +54,7 @@ class MeRolesTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('email', 'rider@bloodbikes.wales')
-            ->assertJsonPath('is_admin', false)
+            ->assertJsonMissingPath('is_admin')
             ->assertJsonPath('roles', ['controller', 'rider', 'trustee']);
     }
 
@@ -82,7 +82,7 @@ class MeRolesTest extends TestCase
         $response = $this->withToken('valid-token')->getJson('/api/me');
 
         $response->assertOk()
-            ->assertJsonPath('is_admin', true)
+            ->assertJsonMissingPath('is_admin')
             ->assertJsonPath('roles', ['admin', 'controller']);
     }
 

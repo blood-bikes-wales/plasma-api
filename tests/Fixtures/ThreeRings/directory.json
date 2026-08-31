@@ -2,27 +2,27 @@
     "volunteers": [
         {
             "id": 100001,
+            "org_id": 748,
+            "url": "/directory/100001?format=json",
             "name": "Alex Morgan",
-            "support": false,
-            "created_at": "2024-03-12T09:30:00+00:00",
-            "updated_at": "2026-05-01T14:12:00+01:00",
+            "is_support_person": false,
             "roles": [
-                {"role": {"id": 5001, "name": "Rider"}},
-                {"role": {"id": 5002, "name": "Controller"}}
+                {"id": 5001, "name": "Rider - Milk", "suffix": ""},
+                {"id": 5002, "name": "Controller", "suffix": ""}
             ],
             "volunteer_properties": [
-                {"volunteer_property": {"name": "Email", "value": "alex.morgan@example.com"}},
-                {"volunteer_property": {"name": "Telephone", "value": "07700 900001"}}
+                {"email": {"org_name": "Email", "value": "alex.morgan@example.com"}},
+                {"telephone_mobile": {"org_name": "Telephone (Mobile)", "value": "07700 900001"}}
             ]
         },
         {
             "id": 100002,
+            "org_id": 748,
+            "url": "/directory/100002?format=json",
             "name": "Bethan Hughes",
-            "support": true,
-            "created_at": "2023-11-02T18:00:00+00:00",
-            "updated_at": "2026-06-20T08:45:00+01:00",
+            "is_support_person": true,
             "roles": [
-                {"role": {"id": 5003, "name": "Driver"}}
+                {"id": 5003, "name": "Driver", "suffix": ""}
             ],
             "volunteer_properties": []
         }

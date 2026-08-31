@@ -2,7 +2,6 @@
 
 namespace App\Services\ThreeRings;
 
-use App\Services\ThreeRings\Data\Role;
 use App\Services\ThreeRings\Data\Shift;
 use App\Services\ThreeRings\Data\Volunteer;
 use App\Services\ThreeRings\Exceptions\ThreeRingsRateLimitedException;
@@ -55,16 +54,6 @@ final class ThreeRingsClient
     }
 
     /**
-     * @return Collection<int, Role>
-     */
-    public function roles(): Collection
-    {
-        $data = $this->get('/admin/roles.json', [], 'roles');
-
-        return collect($data['roles'] ?? [])->map(Role::fromArray(...))->values();
-    }
-
-    /**
      * @return Collection<int, Shift>
      */
     public function shifts(DateTimeInterface $start, DateTimeInterface $end): Collection
@@ -94,6 +83,8 @@ final class ThreeRingsClient
         $fresh = $this->cache->get($freshKey);
 
         if ($fresh !== null) {
+            $this->logger->debug('Three Rings cache hit (fresh).', $this->requestContext($path, $query));
+
             return $fresh;
         }
 
@@ -101,22 +92,35 @@ final class ThreeRingsClient
             $stale = $this->cache->get($staleKey);
 
             if ($stale !== null) {
-                $this->logger->info('Three Rings request budget exhausted, serving stale cache.', ['path' => $path]);
+                $this->logger->info('Three Rings request budget exhausted, serving stale cache.', $this->requestContext($path, $query));
 
                 return $stale;
             }
 
-            throw ThreeRingsRateLimitedException::retryAfter($this->limiter->availableIn(self::RATE_LIMITER_KEY));
+            $retryAfter = $this->limiter->availableIn(self::RATE_LIMITER_KEY);
+
+            $this->logger->error('Three Rings request budget exhausted with no cached data.', [
+                ...$this->requestContext($path, $query),
+                'retry_after_seconds' => $retryAfter,
+            ]);
+
+            throw ThreeRingsRateLimitedException::retryAfter($retryAfter);
         }
 
         try {
             $response = $this->send($path, $query);
         } catch (ConnectionException $exception) {
-            return $this->staleOrFail($staleKey, $path, $exception);
+            return $this->staleOrFail($staleKey, $path, $query, $exception);
         } catch (RequestException $exception) {
             if ($exception->response->serverError()) {
-                return $this->staleOrFail($staleKey, $path, $exception);
+                return $this->staleOrFail($staleKey, $path, $query, $exception);
             }
+
+            $this->logger->error('Three Rings rejected the request.', [
+                ...$this->requestContext($path, $query),
+                'status' => $exception->response->status(),
+                'exception' => $exception,
+            ]);
 
             throw ThreeRingsRequestException::forPath($path, $exception->response->status(), $exception);
         }
@@ -134,32 +138,51 @@ final class ThreeRingsClient
      */
     private function send(string $path, array $query): Response
     {
+        $this->logger->info('Three Rings request started.', $this->requestContext($path, $query));
+
         $this->limiter->hit(self::RATE_LIMITER_KEY, $this->config->decaySeconds);
 
-        return $this->pending()
-            ->retry(2, 500, function (Throwable $exception): bool {
+        $response = $this->pending()
+            ->retry(2, 500, function (Throwable $exception) use ($path, $query): bool {
                 if (! $this->isTransientFailure($exception)) {
                     return false;
                 }
 
                 // Each retry is a real request against the Three Rings budget.
                 if ($this->limiter->tooManyAttempts(self::RATE_LIMITER_KEY, $this->config->maxAttempts)) {
+                    $this->logger->warning('Three Rings request failed and retry budget exhausted.', [
+                        ...$this->requestContext($path, $query),
+                        'exception' => $exception,
+                    ]);
+
                     return false;
                 }
+
+                $this->logger->warning('Three Rings request failed, retrying.', [
+                    ...$this->requestContext($path, $query),
+                    'exception' => $exception,
+                ]);
 
                 $this->limiter->hit(self::RATE_LIMITER_KEY, $this->config->decaySeconds);
 
                 return true;
             })
             ->get($path, $query);
+
+        $this->logger->info('Three Rings request succeeded.', [
+            ...$this->requestContext($path, $query),
+            'status' => $response->status(),
+        ]);
+
+        return $response;
     }
 
     private function pending(): PendingRequest
     {
         return $this->http
             ->baseUrl($this->config->baseUrl)
-            ->timeout(5)
-            ->connectTimeout(3)
+            ->timeout($this->config->timeoutSeconds)
+            ->connectTimeout($this->config->connectTimeoutSeconds)
             ->acceptJson()
             ->withHeaders([
                 'Authorization' => 'APIKEY '.$this->config->apiKey,
@@ -177,15 +200,16 @@ final class ThreeRingsClient
      * Serve the stale cache copy during an outage, or fail the read when no
      * sufficiently recent copy exists.
      *
+     * @param  array<string, string>  $query
      * @return array<mixed>
      */
-    private function staleOrFail(string $staleKey, string $path, Throwable $exception): array
+    private function staleOrFail(string $staleKey, string $path, array $query, Throwable $exception): array
     {
         $stale = $this->cache->get($staleKey);
 
         if ($stale !== null) {
             $this->logger->warning('Three Rings unavailable, serving stale cache.', [
-                'path' => $path,
+                ...$this->requestContext($path, $query),
                 'exception' => $exception,
             ]);
 
@@ -193,11 +217,23 @@ final class ThreeRingsClient
         }
 
         $this->logger->error('Three Rings unavailable and no cached data exists.', [
-            'path' => $path,
+            ...$this->requestContext($path, $query),
             'exception' => $exception,
         ]);
 
         throw ThreeRingsUnavailableException::forPath($path, $exception);
+    }
+
+    /**
+     * @param  array<string, string>  $query
+     * @return array{path: string, query: array<string, string>}
+     */
+    private function requestContext(string $path, array $query): array
+    {
+        return [
+            'path' => $path,
+            'query' => $query,
+        ];
     }
 
     /**

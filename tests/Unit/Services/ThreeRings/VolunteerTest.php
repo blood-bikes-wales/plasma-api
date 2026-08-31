@@ -7,7 +7,32 @@ use PHPUnit\Framework\TestCase;
 
 class VolunteerTest extends TestCase
 {
-    public function test_from_array_maps_all_fields(): void
+    public function test_from_array_maps_live_directory_format(): void
+    {
+        $volunteer = Volunteer::fromArray([
+            'id' => 267046,
+            'name' => 'Abeigail Baker [W]',
+            'roles' => [
+                ['id' => 12929, 'name' => 'Everyone', 'suffix' => null],
+                ['id' => 13014, 'name' => 'Rider - Milk', 'suffix' => ''],
+            ],
+            'volunteer_properties' => [
+                ['email' => ['org_name' => 'Email', 'value' => 'a.baker@bloodbikes.wales']],
+                ['email_alt' => ['org_name' => 'Alternate Email', 'value' => 'luckyred1@hotmail.co.uk']],
+                ['telephone_mobile' => ['org_name' => 'Telephone (Mobile)', 'value' => '07840116046']],
+            ],
+        ]);
+
+        $this->assertSame(267046, $volunteer->id);
+        $this->assertSame('Abeigail Baker [W]', $volunteer->name);
+        $this->assertSame('a.baker@bloodbikes.wales', $volunteer->email);
+        $this->assertSame(['Everyone', 'Rider - Milk'], $volunteer->roles);
+        $this->assertSame('a.baker@bloodbikes.wales', $volunteer->properties['email']);
+        $this->assertSame('luckyred1@hotmail.co.uk', $volunteer->properties['email_alt']);
+        $this->assertSame('07840116046', $volunteer->phone());
+    }
+
+    public function test_from_array_maps_legacy_wrapped_format(): void
     {
         $volunteer = Volunteer::fromArray([
             'id' => 100001,
@@ -73,5 +98,23 @@ class VolunteerTest extends TestCase
 
         $this->assertSame('South Wales', $volunteer->area());
         $this->assertSame('07700900099', $volunteer->phone());
+    }
+
+    public function test_matches_email_on_primary_and_alternate_addresses(): void
+    {
+        $volunteer = Volunteer::fromArray([
+            'id' => 100005,
+            'name' => 'Eleri Owen',
+            'roles' => [],
+            'volunteer_properties' => [
+                ['email' => ['value' => 'primary@example.com']],
+                ['email_alt' => ['value' => 'alt@example.com']],
+            ],
+        ]);
+
+        $this->assertTrue($volunteer->matchesEmail('primary@example.com'));
+        $this->assertTrue($volunteer->matchesEmail('Primary@Example.com'));
+        $this->assertTrue($volunteer->matchesEmail('alt@example.com'));
+        $this->assertFalse($volunteer->matchesEmail('unknown@example.com'));
     }
 }
