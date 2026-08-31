@@ -2,10 +2,10 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\OperationalShiftFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 class OperationalShift extends Model
 {
     /** @use HasFactory<OperationalShiftFactory> */
-    use HasFactory, HasUuids;
+    use HasFactory, HasUuidPrimaryKey;
 
     /**
      * @return array<string, string>
