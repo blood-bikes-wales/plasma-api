@@ -31,15 +31,20 @@ class BikeIndexTest extends TestCase
         Http::preventStrayRequests();
     }
 
-    public function test_lists_bikes_in_registration_order(): void
+    public function test_lists_active_bikes_in_registration_order(): void
     {
         Bike::factory()->create([
             'registration' => 'CF34 DEF',
             'last_recorded_mileage' => 9820,
+            'area' => 'North',
         ]);
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
             'last_recorded_mileage' => 15234,
+            'area' => 'South',
+        ]);
+        Bike::factory()->retired()->create([
+            'registration' => 'CF56 GHI',
         ]);
 
         Http::fake([
@@ -54,6 +59,8 @@ class BikeIndexTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.registration', 'CF12 ABC')
             ->assertJsonPath('data.0.lastRecordedMileage', 15234)
+            ->assertJsonPath('data.0.area', 'South')
+            ->assertJsonPath('data.0.status', 'active')
             ->assertJsonPath('data.1.registration', 'CF34 DEF');
     }
 

@@ -90,7 +90,10 @@ Do not document routes that are not registered.
 | GET | `/api/` | none | `{ "name": <app.name> }` |
 | GET | `/api/me` | `auth.google` | Authenticated user JSON with `roles` array (no `is_admin` field) |
 | GET | `/api/shifts/active` | `auth.google` + any Plasma role | `{ "data": [ ActiveShift, … ] }` camelCase |
-| GET | `/api/bikes` | `auth.google` + controller (`view-bikes`) | `{ "data": [ { id, registration, lastRecordedMileage } ] }` — all bikes for shift logon |
+| GET | `/api/bikes` | `auth.google` + controller or trustee (`view-bikes`) | `{ "data": [ { id, registration, area, status, lastRecordedMileage, purchasedAt? } ] }` — active bikes for shift logon; optional `status` / `area` query filters require `manage-bikes` |
+| POST | `/api/bikes` | `auth.google` + trustee/admin (`manage-bikes`) | Create bike; body `{ registration, area, lastRecordedMileage, purchasedAt? }`; 201 |
+| PATCH | `/api/bikes/{id}` | `auth.google` + trustee/admin (`manage-bikes`) | Update registration, area, purchasedAt |
+| POST | `/api/bikes/{id}/retire` | `auth.google` + trustee/admin (`manage-bikes`) | Retire bike (no hard delete) |
 | GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name } ] }` from Three Rings — rider picker at logon |
 | GET | `/api/directory/volunteers` | `auth.google` + any Plasma role (`view-directory`) | Volunteer search; query `q`, `role`, `area` (all optional; empty if all blank) |
 | GET | `/api/directory/bikes` | `auth.google` + any Plasma role (`view-directory`) | Bike search by registration; query `q` (empty if blank) |

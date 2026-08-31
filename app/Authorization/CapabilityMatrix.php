@@ -26,10 +26,16 @@ final class CapabilityMatrix
                 Role::Trustee,
             ],
             Capability::ManageShifts,
-            Capability::ViewBikes,
             Capability::ViewVolunteers,
             Capability::CreateJob => [
                 Role::Controller,
+            ],
+            Capability::ViewBikes => [
+                Role::Controller,
+                Role::Trustee,
+            ],
+            Capability::ManageBikes => [
+                Role::Trustee,
             ],
         };
     }
