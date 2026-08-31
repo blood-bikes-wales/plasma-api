@@ -55,7 +55,7 @@ BR-011 (data and compute in `europe-west2`) applies to this API.
 
 ## In-repo path
 
-**Host the API on Cloud Run** on `plasma-staging-502110` / `plasma-production`, region `europe-west2`. Cloud SQL has a public IP with **no authorised networks**; only the Cloud Run Cloud SQL connector can reach it. No custom domain in this pass.
+**Host the API on Cloud Run** on `plasma-staging-502110` / `plasma-production`, region `europe-west2`. Cloud SQL has a public IP with **no authorised networks** and **`ssl_mode = ENCRYPTED_ONLY`**; only the Cloud Run Cloud SQL connector (encrypted Unix socket) can reach it. No custom domain in this pass.
 
 ## Key paths
 

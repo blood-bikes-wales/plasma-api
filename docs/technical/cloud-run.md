@@ -17,7 +17,7 @@ Bootstrap GCP, apply Terraform for staging or production, or diagnose a failed G
 | `staging` | `plasma-staging-502110` | `infrastructure/environments/staging.tfvars` |
 | `production` | `plasma-production` | `infrastructure/environments/production.tfvars` |
 
-Copy `infrastructure/terraform.tfvars.example` to `infrastructure/terraform.tfvars` (gitignored) and set `google_client_id` (and `three_rings_api_key` when you have one).
+Copy `infrastructure/terraform.tfvars.example` to `infrastructure/terraform.tfvars` (gitignored) and set `google_client_id` and `three_rings_api_key`.
 
 If Plasma Controller is not yet on Cloud Run in the same project, set `frontend_url_override` to the SPA origin so CORS still works.
 
@@ -64,7 +64,7 @@ Copy outputs into GitHub **Environments** named `staging` and `production`:
 | `WIF_SERVICE_ACCOUNT` (variable) | `deploy_service_account_email` |
 | `GCP_PROJECT_ID` (variable) | `plasma-staging-502110` or `plasma-production` |
 | `GOOGLE_CLIENT_ID` (secret) | OAuth Web client ID (same as Terraform `google_client_id`) |
-| `THREE_RINGS_API_KEY` (secret) | Three Rings API key (optional until that client is used) |
+| `THREE_RINGS_API_KEY` (secret) | Three Rings API key (required for directory and role resolution) |
 
 On the production GitHub Environment, require a reviewer so `workflow_dispatch` cannot ship live unattended.
 

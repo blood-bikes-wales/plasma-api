@@ -68,7 +68,7 @@ resource "google_secret_manager_secret" "three_rings_api_key" {
 
 resource "google_secret_manager_secret_version" "three_rings_api_key" {
   secret      = google_secret_manager_secret.three_rings_api_key.id
-  secret_data = var.three_rings_api_key != "" ? var.three_rings_api_key : "unset"
+  secret_data = var.three_rings_api_key
 }
 
 resource "google_secret_manager_secret_iam_member" "runtime" {

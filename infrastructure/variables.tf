@@ -106,10 +106,14 @@ variable "google_allowed_domain" {
 }
 
 variable "three_rings_api_key" {
-  description = "Three Rings API key."
+  description = "Three Rings API key (required for volunteer directory and role resolution)."
   type        = string
   sensitive   = true
-  default     = ""
+
+  validation {
+    condition     = length(trimspace(var.three_rings_api_key)) > 0
+    error_message = "three_rings_api_key must be set."
+  }
 }
 
 variable "three_rings_base_url" {
