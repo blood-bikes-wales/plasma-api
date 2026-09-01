@@ -25,6 +25,12 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
         Route::get('/bikes', [BikeController::class, 'index'])->name('bikes.index');
     });
 
+    Route::middleware('access:manage-bikes')->group(function () {
+        Route::post('/bikes', [BikeController::class, 'store'])->name('bikes.store');
+        Route::patch('/bikes/{bike}', [BikeController::class, 'update'])->name('bikes.update');
+        Route::post('/bikes/{bike}/retire', [BikeController::class, 'retire'])->name('bikes.retire');
+    });
+
     Route::middleware('access:view-volunteers')->group(function () {
         Route::get('/volunteers', [VolunteerController::class, 'index'])->name('volunteers.index');
     });

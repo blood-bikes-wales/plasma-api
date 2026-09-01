@@ -16,4 +16,5 @@ enum Capability: string
     case ViewDirectory = 'view-directory';
     case CreateJob = 'create-job';
     case ViewJobs = 'view-jobs';
+    case ManageBikes = 'manage-bikes';
 }

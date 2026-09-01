@@ -170,6 +170,12 @@ final class OperationalShiftService
             ]);
         }
 
+        if (! $bike->isActive()) {
+            throw ValidationException::withMessages([
+                'bikeId' => ['The selected bike has been retired.'],
+            ]);
+        }
+
         return $bike;
     }
 

@@ -19,7 +19,17 @@ class BikeFactory extends Factory
     {
         return [
             'registration' => strtoupper(fake()->unique()->bothify('??## ???')),
+            'area' => 'South',
             'last_recorded_mileage' => fake()->numberBetween(1_000, 50_000),
+            'status' => 'active',
         ];
+    }
+
+    public function retired(): static
+    {
+        return $this->state(fn (): array => [
+            'status' => 'retired',
+            'retired_at' => now(),
+        ]);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Services\Bikes;
 
+use App\Enums\ServiceArea;
 use App\Models\Bike;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
@@ -40,9 +41,37 @@ final class BikeLogService
     /**
      * @return EloquentCollection<int, Bike>
      */
-    public function listAll(): EloquentCollection
+    public function listActive(): EloquentCollection
     {
-        return Bike::query()->orderBy('registration')->get();
+        return Bike::query()
+            ->active()
+            ->orderBy('registration')
+            ->get();
+    }
+
+    /**
+     * @return EloquentCollection<int, Bike>
+     */
+    public function listManaged(?string $status, ?string $area): EloquentCollection
+    {
+        $query = Bike::query()->orderBy('registration');
+
+        if ($status === 'retired') {
+            $query->retired();
+        }
+
+        if ($status === 'active') {
+            $query->active();
+        }
+
+        if ($area !== null && $area !== '') {
+            $serviceArea = ServiceArea::tryFrom($area);
+            if ($serviceArea !== null) {
+                $query->where('area', $serviceArea->value);
+            }
+        }
+
+        return $query->get();
     }
 
     private function normalised(?string $value): ?string

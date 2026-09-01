@@ -14,6 +14,8 @@ use Illuminate\Http\Resources\Json\JsonResource;
  */
 class BikeResource extends JsonResource
 {
+    public static $wrap = null;
+
     /**
      * @return array<string, mixed>
      */
@@ -22,7 +24,10 @@ class BikeResource extends JsonResource
         return [
             'id' => $this->id,
             'registration' => $this->registration,
+            'area' => $this->area,
+            'status' => $this->status,
             'lastRecordedMileage' => $this->last_recorded_mileage,
+            'purchasedAt' => $this->purchased_at?->toDateString(),
         ];
     }
 }

@@ -76,7 +76,7 @@ BR-011 (data and compute in `europe-west2`) applies to this API.
 - The first Cloud Run revision may use the placeholder hello image until CI pushes FrankenPHP; `/up` will fail until then.
 - Do not run `php artisan migrate` on every HTTP instance start (race under scale-out). Use the migrate job.
 - Auth log channel writes files locally; Cloud Run sets `LOG_AUTH_CHANNEL=stderr`.
-- Converting integer primary keys to UUID is **not** part of this hosting work.
+- All application tables use UUID primary keys with `uuid_generate_v4()` defaults on PostgreSQL.
 
 ## Related
 
