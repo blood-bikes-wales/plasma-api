@@ -19,7 +19,7 @@ class BikeFactory extends Factory
     {
         return [
             'registration' => strtoupper(fake()->unique()->bothify('??## ???')),
-            'area' => 'South',
+            'area' => 'E',
             'last_recorded_mileage' => fake()->numberBetween(1_000, 50_000),
             'status' => 'active',
         ];

@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\BikeController;
 use App\Http\Controllers\Api\DirectoryController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MeController;
+use App\Http\Controllers\Api\PostcodeAreaController;
+use App\Http\Controllers\Api\ServiceAreaController;
 use App\Http\Controllers\Api\ShiftController;
 use App\Http\Controllers\Api\VolunteerController;
 use Illuminate\Support\Facades\Route;
@@ -65,5 +67,23 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
             ->whereIn('action', ['allocate', 'collect', 'deliver'])
             ->name('jobs.action');
         Route::post('/jobs/{job}/cancel', [JobController::class, 'cancel'])->name('jobs.cancel');
+    });
+
+    Route::middleware('access:view-postcode-areas')->group(function () {
+        Route::get('/service-areas', [ServiceAreaController::class, 'index'])
+            ->name('service-areas.index');
+        Route::get('/postcode-areas', [PostcodeAreaController::class, 'index'])
+            ->name('postcode-areas.index');
+        Route::get('/postcode-areas/lookup', [PostcodeAreaController::class, 'lookup'])
+            ->name('postcode-areas.lookup');
+    });
+
+    Route::middleware('access:manage-postcode-areas')->group(function () {
+        Route::post('/postcode-areas', [PostcodeAreaController::class, 'store'])
+            ->name('postcode-areas.store');
+        Route::patch('/postcode-areas/{outbound_postcode_area}', [PostcodeAreaController::class, 'update'])
+            ->name('postcode-areas.update');
+        Route::post('/postcode-areas/import', [PostcodeAreaController::class, 'import'])
+            ->name('postcode-areas.import');
     });
 });

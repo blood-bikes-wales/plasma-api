@@ -9,11 +9,13 @@ use App\Models\OperationalShift;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Tests\Concerns\SeedsServiceAreas;
 use Tests\TestCase;
 
 class ManageBikeTest extends TestCase
 {
     use RefreshDatabase;
+    use SeedsServiceAreas;
 
     protected function setUp(): void
     {
@@ -32,6 +34,7 @@ class ManageBikeTest extends TestCase
         ]);
 
         Http::preventStrayRequests();
+        $this->seedServiceAreas();
     }
 
     public function test_unauthenticated_requests_are_denied(): void
@@ -83,14 +86,14 @@ class ManageBikeTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('registration', 'CF12 ABC')
-            ->assertJsonPath('area', 'South')
+            ->assertJsonPath('area', 'E')
             ->assertJsonPath('status', BikeStatus::Active->value)
             ->assertJsonPath('lastRecordedMileage', 12000)
             ->assertJsonPath('purchasedAt', '2024-03-15');
 
         $this->assertDatabaseHas('bikes', [
             'registration' => 'CF12 ABC',
-            'area' => 'South',
+            'area' => 'E',
             'status' => BikeStatus::Active->value,
             'last_recorded_mileage' => 12000,
         ]);
@@ -151,7 +154,7 @@ class ManageBikeTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'area' => 'South',
+            'area' => 'E',
         ]);
 
         $this->fakeDirectory($this->trusteeVolunteer());
@@ -160,18 +163,18 @@ class ManageBikeTest extends TestCase
         $this->withToken('valid-token')
             ->patchJson("/api/bikes/{$bike->id}", [
                 'registration' => 'cf34 def',
-                'area' => 'North',
+                'area' => 'NW',
                 'purchasedAt' => '2025-01-10',
             ])
             ->assertOk()
             ->assertJsonPath('registration', 'CF34 DEF')
-            ->assertJsonPath('area', 'North')
+            ->assertJsonPath('area', 'NW')
             ->assertJsonPath('purchasedAt', '2025-01-10');
 
         $this->assertDatabaseHas('bikes', [
             'id' => $bike->id,
             'registration' => 'CF34 DEF',
-            'area' => 'North',
+            'area' => 'NW',
         ]);
     }
 
@@ -249,11 +252,11 @@ class ManageBikeTest extends TestCase
     {
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'area' => 'South',
+            'area' => 'E',
         ]);
         Bike::factory()->retired()->create([
             'registration' => 'CF34 DEF',
-            'area' => 'North',
+            'area' => 'NW',
         ]);
 
         $this->fakeDirectory($this->trusteeVolunteer());
@@ -267,7 +270,7 @@ class ManageBikeTest extends TestCase
             ->assertJsonPath('data.0.status', BikeStatus::Retired->value);
 
         $this->withToken('valid-token')
-            ->getJson('/api/bikes?area=South')
+            ->getJson('/api/bikes?area=E')
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.registration', 'CF12 ABC');
@@ -314,7 +317,7 @@ class ManageBikeTest extends TestCase
     {
         return [
             'registration' => 'cf12 abc',
-            'area' => 'South',
+            'area' => 'E',
             'lastRecordedMileage' => 12000,
             'purchasedAt' => '2024-03-15',
         ];
@@ -327,7 +330,7 @@ class ManageBikeTest extends TestCase
     {
         return [
             'registration' => 'CF12 ABC',
-            'area' => 'South',
+            'area' => 'E',
             'purchasedAt' => '2024-03-15',
         ];
     }

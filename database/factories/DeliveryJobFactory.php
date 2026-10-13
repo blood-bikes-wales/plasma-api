@@ -34,7 +34,7 @@ class DeliveryJobFactory extends Factory
             'delivery_latitude' => 51.5470,
             'delivery_longitude' => -3.3910,
             'contents' => 'Blood samples',
-            'service_areas' => ['South'],
+            'service_areas' => ['E'],
             'created_by_user_id' => User::factory(),
         ];
     }

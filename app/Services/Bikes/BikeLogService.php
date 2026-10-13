@@ -2,7 +2,6 @@
 
 namespace App\Services\Bikes;
 
-use App\Enums\ServiceArea;
 use App\Models\Bike;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
@@ -65,10 +64,7 @@ final class BikeLogService
         }
 
         if ($area !== null && $area !== '') {
-            $serviceArea = ServiceArea::tryFrom($area);
-            if ($serviceArea !== null) {
-                $query->where('area', $serviceArea->value);
-            }
+            $query->where('area', $area);
         }
 
         return $query->get();
