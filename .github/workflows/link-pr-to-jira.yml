@@ -59,6 +59,7 @@ jobs:
       - name: Link PR on Jira issue
         if: steps.jira.outputs.found == 'true'
         env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_CLOUD_ID: ${{ secrets.JIRA_CLOUD_ID }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
@@ -70,15 +71,45 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [ -z "${JIRA_CLOUD_ID:-}" ]; then
-            echo "Missing secret JIRA_CLOUD_ID (Atlassian site cloud ID)."
+          # Trim secrets — trailing newlines from `gh secret set` break Basic auth.
+          JIRA_BASE_URL="$(printf '%s' "${JIRA_BASE_URL:-}" | tr -d '[:space:]')"
+          JIRA_BASE_URL="${JIRA_BASE_URL%/}"
+          JIRA_CLOUD_ID="$(printf '%s' "${JIRA_CLOUD_ID:-}" | tr -d '[:space:]')"
+          JIRA_EMAIL="$(printf '%s' "${JIRA_EMAIL:-}" | tr -d '[:space:]')"
+          JIRA_API_TOKEN="$(printf '%s' "${JIRA_API_TOKEN:-}" | tr -d '[:space:]')"
+
+          if [ -z "$JIRA_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "Missing JIRA_EMAIL or JIRA_API_TOKEN secret."
+            exit 1
+          fi
+
+          if [ -z "$JIRA_CLOUD_ID" ]; then
+            if [ -z "$JIRA_BASE_URL" ]; then
+              echo "Missing JIRA_CLOUD_ID (or JIRA_BASE_URL to resolve it)."
+              exit 1
+            fi
+            echo "Resolving cloud ID from ${JIRA_BASE_URL}/_edge/tenant_info"
+            JIRA_CLOUD_ID="$(curl --fail-with-body -sS "${JIRA_BASE_URL}/_edge/tenant_info" | jq -r '.cloudId')"
+          fi
+
+          if [ -z "$JIRA_CLOUD_ID" ] || [ "$JIRA_CLOUD_ID" = "null" ]; then
+            echo "Could not determine Atlassian site cloud ID."
             exit 1
           fi
 
           # Scoped API tokens must use api.atlassian.com with the site cloud ID:
-          # https://developer.atlassian.com/cloud/confluence/oauth-2-3lo-apps/#3-2-construct-the-request-url
+          # https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/#3-2-construct-the-request-url
+          # https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/
           JIRA_API_BASE="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
-          AUTH="$(printf "%s:%s" "$JIRA_EMAIL" "$JIRA_API_TOKEN" | base64 | tr -d '\n')"
+          echo "Using Jira API base: ${JIRA_API_BASE}"
+          echo "Auth email length: ${#JIRA_EMAIL}; token length: ${#JIRA_API_TOKEN}"
+
+          # Verify credentials before creating the remote link (curl --user = Basic auth).
+          curl --fail-with-body -sS \
+            -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+            -H "Accept: application/json" \
+            "${JIRA_API_BASE}/rest/api/3/myself" \
+            | jq -r '"Authenticated as: \(.displayName // .emailAddress // .accountId)"'
 
           jq -n \
             --arg globalId "github:${REPOSITORY}:pull:${PR_NUMBER}" \
@@ -99,9 +130,9 @@ jobs:
               }
             }' > jira-remote-link.json
 
-          curl --fail-with-body -L \
+          curl --fail-with-body -sS \
+            -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
             -X POST \
-            -H "Authorization: Basic ${AUTH}" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             --data @jira-remote-link.json \
