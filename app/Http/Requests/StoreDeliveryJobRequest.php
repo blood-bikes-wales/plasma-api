@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Rules\ActiveServiceAreaCode;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreDeliveryJobRequest extends FormRequest
@@ -13,12 +14,20 @@ class StoreDeliveryJobRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $serviceAreas = $this->input('serviceAreas', $this->input('service_areas'));
+        if (is_array($serviceAreas)) {
+            $serviceAreas = array_map(
+                static fn (mixed $area): mixed => is_string($area) ? strtoupper(trim($area)) : $area,
+                $serviceAreas,
+            );
+        }
+
         $this->merge([
             'sender' => $this->normaliseSender($this->arrayInput('sender')),
             'collection' => $this->normaliseLocation($this->arrayInput('collection')),
             'delivery' => $this->normaliseLocation($this->arrayInput('delivery')),
             'contents' => $this->input('contents'),
-            'serviceAreas' => $this->input('serviceAreas', $this->input('service_areas')),
+            'serviceAreas' => $serviceAreas,
         ]);
     }
 
@@ -44,7 +53,7 @@ class StoreDeliveryJobRequest extends FormRequest
             'delivery.longitude' => ['required', 'numeric', 'between:-180,180'],
             'contents' => ['required', 'string', 'max:2000'],
             'serviceAreas' => ['required', 'array', 'min:1'],
-            'serviceAreas.*' => ['required', 'string', 'max:255'],
+            'serviceAreas.*' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
         ];
     }
 

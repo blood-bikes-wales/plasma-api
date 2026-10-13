@@ -8,11 +8,13 @@ use App\Models\DeliveryJob;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Tests\Concerns\SeedsServiceAreas;
 use Tests\TestCase;
 
 class CreateDeliveryJobTest extends TestCase
 {
     use RefreshDatabase;
+    use SeedsServiceAreas;
 
     protected function setUp(): void
     {
@@ -31,6 +33,7 @@ class CreateDeliveryJobTest extends TestCase
         ]);
 
         Http::preventStrayRequests();
+        $this->seedServiceAreas();
     }
 
     public function test_unauthenticated_requests_are_denied(): void
@@ -67,7 +70,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('collection.latitude', 51.5068)
             ->assertJsonPath('delivery.placeId', 'ChIJDeliveryPlaceId0001')
             ->assertJsonPath('contents', 'Blood samples')
-            ->assertJsonPath('serviceAreas', ['South'])
+            ->assertJsonPath('serviceAreas', ['E'])
             ->assertJsonMissingPath('data');
 
         $this->assertDatabaseHas('delivery_jobs', [
@@ -158,7 +161,7 @@ class CreateDeliveryJobTest extends TestCase
             'lat' => 51.5068,
             'lng' => -3.19,
         ];
-        $payload['service_areas'] = ['South'];
+        $payload['service_areas'] = ['E'];
         unset($payload['serviceAreas']);
 
         $this->withToken('valid-token')
@@ -191,7 +194,7 @@ class CreateDeliveryJobTest extends TestCase
                 'longitude' => -3.391,
             ],
             'contents' => 'Blood samples',
-            'serviceAreas' => ['South'],
+            'serviceAreas' => ['E'],
         ];
     }
 

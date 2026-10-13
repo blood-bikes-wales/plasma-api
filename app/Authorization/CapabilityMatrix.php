@@ -37,6 +37,13 @@ final class CapabilityMatrix
             Capability::ManageBikes => [
                 Role::Trustee,
             ],
+            Capability::ViewPostcodeAreas => [
+                Role::Controller,
+                Role::Trustee,
+            ],
+            Capability::ManagePostcodeAreas => [
+                Role::Trustee,
+            ],
         };
     }
 }

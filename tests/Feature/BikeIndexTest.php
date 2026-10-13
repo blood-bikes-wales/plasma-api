@@ -36,12 +36,12 @@ class BikeIndexTest extends TestCase
         Bike::factory()->create([
             'registration' => 'CF34 DEF',
             'last_recorded_mileage' => 9820,
-            'area' => 'North',
+            'area' => 'NW',
         ]);
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
             'last_recorded_mileage' => 15234,
-            'area' => 'South',
+            'area' => 'E',
         ]);
         Bike::factory()->retired()->create([
             'registration' => 'CF56 GHI',
@@ -59,7 +59,7 @@ class BikeIndexTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.0.registration', 'CF12 ABC')
             ->assertJsonPath('data.0.lastRecordedMileage', 15234)
-            ->assertJsonPath('data.0.area', 'South')
+            ->assertJsonPath('data.0.area', 'E')
             ->assertJsonPath('data.0.status', 'active')
             ->assertJsonPath('data.1.registration', 'CF34 DEF');
     }

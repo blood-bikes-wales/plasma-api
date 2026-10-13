@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests;
 
-use App\Enums\ServiceArea;
 use App\Models\Bike;
+use App\Rules\ActiveServiceAreaCode;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -21,9 +21,14 @@ class UpdateBikeRequest extends FormRequest
             $registration = strtoupper(trim($registration));
         }
 
+        $area = $this->input('area');
+        if (is_string($area)) {
+            $area = strtoupper(trim($area));
+        }
+
         $this->merge([
             'registration' => $registration,
-            'area' => $this->input('area'),
+            'area' => $area,
             'purchasedAt' => $this->input('purchasedAt', $this->input('purchased_at')),
         ]);
     }
@@ -43,7 +48,7 @@ class UpdateBikeRequest extends FormRequest
                 'max:20',
                 Rule::unique('bikes', 'registration')->ignore($bike->id),
             ],
-            'area' => ['required', Rule::enum(ServiceArea::class)],
+            'area' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
             'purchasedAt' => ['nullable', 'date', 'before_or_equal:today'],
         ];
     }
