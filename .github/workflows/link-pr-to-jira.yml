@@ -97,19 +97,53 @@ jobs:
             exit 1
           fi
 
-          # Scoped API tokens must use api.atlassian.com with the site cloud ID:
+          # Scoped API tokens: https://api.atlassian.com/ex/jira/{cloudId}/...
+          # Classic (unscoped) tokens: https://your-domain.atlassian.net/...
           # https://developer.atlassian.com/cloud/jira/platform/oauth-2-3lo-apps/#3-2-construct-the-request-url
           # https://support.atlassian.com/atlassian-account/docs/manage-api-tokens-for-your-atlassian-account/
-          JIRA_API_BASE="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
-          echo "Using Jira API base: ${JIRA_API_BASE}"
+          SCOPED_API_BASE="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
           echo "Auth email length: ${#JIRA_EMAIL}; token length: ${#JIRA_API_TOKEN}"
 
-          # Verify credentials before creating the remote link (curl --user = Basic auth).
-          curl --fail-with-body -sS \
-            -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
-            -H "Accept: application/json" \
-            "${JIRA_API_BASE}/rest/api/3/myself" \
-            | jq -r '"Authenticated as: \(.displayName // .emailAddress // .accountId)"'
+          resolve_api_base() {
+            local response http_code body
+            response="$(curl -sS -w '\n%{http_code}' \
+              -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+              -H "Accept: application/json" \
+              "${SCOPED_API_BASE}/rest/api/3/myself")"
+            http_code="$(printf '%s' "$response" | tail -n1)"
+            body="$(printf '%s' "$response" | sed '$d')"
+            if [ "$http_code" = "200" ]; then
+              echo "$body" | jq -r '"Authenticated via scoped gateway as: \(.displayName // .emailAddress // .accountId)"' >&2
+              printf '%s' "$SCOPED_API_BASE"
+              return 0
+            fi
+
+            echo "Scoped gateway returned HTTP ${http_code}; trying classic site URL." >&2
+            if [ -z "$JIRA_BASE_URL" ]; then
+              echo "Missing JIRA_BASE_URL for classic-token fallback." >&2
+              return 1
+            fi
+
+            response="$(curl -sS -w '\n%{http_code}' \
+              -u "${JIRA_EMAIL}:${JIRA_API_TOKEN}" \
+              -H "Accept: application/json" \
+              "${JIRA_BASE_URL}/rest/api/3/myself")"
+            http_code="$(printf '%s' "$response" | tail -n1)"
+            body="$(printf '%s' "$response" | sed '$d')"
+            if [ "$http_code" = "200" ]; then
+              echo "$body" | jq -r '"Authenticated via site URL as: \(.displayName // .emailAddress // .accountId)"' >&2
+              printf '%s' "$JIRA_BASE_URL"
+              return 0
+            fi
+
+            echo "Jira auth failed on scoped gateway and site URL (last HTTP ${http_code})." >&2
+            echo "Check JIRA_EMAIL matches the account that created JIRA_API_TOKEN," >&2
+            echo "and that a scoped token uses write:jira-work (or classic scopes covering remote links)." >&2
+            return 1
+          }
+
+          JIRA_API_BASE="$(resolve_api_base)"
+          echo "Using Jira API base: ${JIRA_API_BASE}"
 
           jq -n \
             --arg globalId "github:${REPOSITORY}:pull:${PR_NUMBER}" \
