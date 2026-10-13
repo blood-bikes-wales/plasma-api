@@ -59,7 +59,7 @@ jobs:
       - name: Link PR on Jira issue
         if: steps.jira.outputs.found == 'true'
         env:
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_CLOUD_ID: ${{ secrets.JIRA_CLOUD_ID }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           JIRA_KEY: ${{ steps.jira.outputs.key }}
@@ -70,7 +70,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          JIRA_BASE_URL="${JIRA_BASE_URL%/}"
+          if [ -z "${JIRA_CLOUD_ID:-}" ]; then
+            echo "Missing secret JIRA_CLOUD_ID (Atlassian site cloud ID)."
+            exit 1
+          fi
+
+          # Scoped API tokens must use api.atlassian.com with the site cloud ID:
+          # https://developer.atlassian.com/cloud/confluence/oauth-2-3lo-apps/#3-2-construct-the-request-url
+          JIRA_API_BASE="https://api.atlassian.com/ex/jira/${JIRA_CLOUD_ID}"
           AUTH="$(printf "%s:%s" "$JIRA_EMAIL" "$JIRA_API_TOKEN" | base64 | tr -d '\n')"
 
           jq -n \
@@ -98,7 +105,7 @@ jobs:
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             --data @jira-remote-link.json \
-            "${JIRA_BASE_URL}/rest/api/3/issue/${JIRA_KEY}/remotelink"
+            "${JIRA_API_BASE}/rest/api/3/issue/${JIRA_KEY}/remotelink"
 
       - name: Add or update PR comment with Jira link
         if: steps.jira.outputs.found == 'true'
