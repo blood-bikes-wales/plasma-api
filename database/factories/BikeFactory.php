@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Bike;
+use App\Models\ServiceArea;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,16 +20,18 @@ class BikeFactory extends Factory
     {
         return [
             'registration' => strtoupper(fake()->unique()->bothify('??## ???')),
-            'area' => 'E',
-            'last_recorded_mileage' => fake()->numberBetween(1_000, 50_000),
-            'status' => 'active',
+            'service_area_id' => fn (): string => ServiceArea::query()->firstOrCreate(
+                ['code' => 'E'],
+                ['full_name' => 'East'],
+            )->id,
+            'initial_mileage' => fake()->numberBetween(1_000, 50_000),
+            'retired_at' => null,
         ];
     }
 
     public function retired(): static
     {
         return $this->state(fn (): array => [
-            'status' => 'retired',
             'retired_at' => now(),
         ]);
     }

@@ -13,7 +13,6 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'rider_id',
-    'rider_name',
     'bike_id',
     'start_mileage',
     'mileage_variance_reason',
@@ -35,12 +34,19 @@ class OperationalShift extends Model
     protected function casts(): array
     {
         return [
-            'rider_id' => 'integer',
             'start_mileage' => 'integer',
             'end_mileage' => 'integer',
             'logged_on_at' => 'datetime',
             'logged_off_at' => 'datetime',
         ];
+    }
+
+    /**
+     * @return BelongsTo<Rider, $this>
+     */
+    public function rider(): BelongsTo
+    {
+        return $this->belongsTo(Rider::class);
     }
 
     /**

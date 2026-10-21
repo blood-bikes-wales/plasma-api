@@ -21,8 +21,8 @@ class OutboundPostcodeAreaResource extends JsonResource
         return [
             'id' => $this->id,
             'outboundPostcode' => $this->outbound_postcode,
-            'areaCode' => $this->area_code,
-            'areaFullName' => $this->area_full_name,
+            'areaCode' => $this->serviceArea?->code,
+            'areaFullName' => $this->serviceArea?->full_name,
             'sortOrder' => $this->sort_order,
             'active' => $this->active,
             'updatedAt' => $this->updated_at?->toIso8601String(),

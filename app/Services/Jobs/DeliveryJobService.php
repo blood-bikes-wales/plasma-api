@@ -7,6 +7,8 @@ use App\Enums\JobScope;
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
 use App\Models\OperationalShift;
+use App\Models\Place;
+use App\Models\ServiceArea;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -24,36 +26,36 @@ final class DeliveryJobService
      */
     public function create(User $actor, array $payload): DeliveryJob
     {
-        $sender = $payload['sender'];
-        $collection = $payload['collection'];
-        $delivery = $payload['delivery'];
+        return DB::transaction(function () use ($actor, $payload): DeliveryJob {
+            $sender = $payload['sender'];
+            $collection = $payload['collection'];
+            $delivery = $payload['delivery'];
 
-        $job = DeliveryJob::query()->create([
-            'reference' => $this->nextReference(),
-            'status' => JobStatus::New,
-            'sender_name' => $sender['name'],
-            'sender_phone' => $sender['phone'],
-            'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
-            'collection_place_id' => $collection['placeId'],
-            'collection_address' => $collection['address'],
-            'collection_latitude' => $collection['latitude'],
-            'collection_longitude' => $collection['longitude'],
-            'delivery_place_id' => $delivery['placeId'],
-            'delivery_address' => $delivery['address'],
-            'delivery_latitude' => $delivery['latitude'],
-            'delivery_longitude' => $delivery['longitude'],
-            'contents' => $payload['contents'],
-            'service_areas' => array_values($payload['serviceAreas']),
-            'created_by_user_id' => $actor->id,
-        ]);
+            $collectionPlace = $this->upsertPlace($collection);
+            $deliveryPlace = $this->upsertPlace($delivery);
 
-        Log::info('Delivery job created.', [
-            'job_id' => $job->id,
-            'reference' => $job->reference,
-            'user_id' => $actor->id,
-        ]);
+            $job = DeliveryJob::query()->create([
+                'reference' => $this->nextReference(),
+                'status' => JobStatus::New,
+                'sender_name' => $sender['name'],
+                'sender_phone' => $sender['phone'],
+                'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
+                'collection_place_id' => $collectionPlace->id,
+                'delivery_place_id' => $deliveryPlace->id,
+                'contents' => $payload['contents'],
+                'created_by_user_id' => $actor->id,
+            ]);
 
-        return $job;
+            $job->serviceAreas()->sync($this->serviceAreaIds(array_values($payload['serviceAreas'])));
+
+            Log::info('Delivery job created.', [
+                'job_id' => $job->id,
+                'reference' => $job->reference,
+                'user_id' => $actor->id,
+            ]);
+
+            return $job->load(['collectionPlace', 'deliveryPlace', 'serviceAreas']);
+        });
     }
 
     /**
@@ -64,7 +66,16 @@ final class DeliveryJobService
         return DeliveryJob::query()
             ->topLevel()
             ->whereIn('status', $scope->statuses())
-            ->with(['legs'])
+            ->with([
+                'legs.collectionPlace',
+                'legs.deliveryPlace',
+                'legs.serviceAreas',
+                'legs.operationalShift.rider',
+                'collectionPlace',
+                'deliveryPlace',
+                'serviceAreas',
+                'operationalShift.rider',
+            ])
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->get();
@@ -82,15 +93,20 @@ final class DeliveryJobService
             $routePoints = $this->routePoints($locked, $payload['rendezvousPoints']);
             $this->createRelayLegs($actor, $locked, $routePoints);
 
-            $locked->fill(['is_relay' => true])->save();
-
             Log::info('Delivery job converted to a relay.', [
                 'job_id' => $locked->id,
                 'leg_count' => count($routePoints) - 1,
                 'user_id' => $actor->id,
             ]);
 
-            return $locked->refresh()->load('legs');
+            return $locked->refresh()->load([
+                'legs.collectionPlace',
+                'legs.deliveryPlace',
+                'legs.serviceAreas',
+                'collectionPlace',
+                'deliveryPlace',
+                'serviceAreas',
+            ]);
         });
     }
 
@@ -109,12 +125,10 @@ final class DeliveryJobService
             $locked->fill([
                 'status' => JobStatus::Allocated,
                 'operational_shift_id' => $shift->id,
-                'allocated_rider_id' => $shift->rider_id,
-                'allocated_rider_name' => $shift->rider_name,
                 'allocated_at' => now(),
             ])->save();
 
-            $updated = $locked->refresh();
+            $updated = $locked->refresh()->load(['operationalShift.rider', 'collectionPlace', 'deliveryPlace', 'serviceAreas']);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job allocated.', [
@@ -147,7 +161,7 @@ final class DeliveryJobService
                 'collected_at' => $this->parseTimestamp($payload['collectedAt'] ?? null) ?? now(),
             ])->save();
 
-            $updated = $locked->refresh();
+            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job collected.', [
@@ -175,7 +189,7 @@ final class DeliveryJobService
                 'delivered_at' => $this->parseTimestamp($payload['deliveredAt'] ?? null) ?? now(),
             ])->save();
 
-            $updated = $locked->refresh();
+            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job delivered.', [
@@ -207,7 +221,7 @@ final class DeliveryJobService
                 'cancelled_at' => now(),
             ])->save();
 
-            $updated = $locked->refresh();
+            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job cancelled.', [
@@ -220,24 +234,68 @@ final class DeliveryJobService
     }
 
     /**
+     * @param  array<string, mixed>  $location
+     */
+    private function upsertPlace(array $location): Place
+    {
+        $place = Place::query()->where('external_id', $location['placeId'])->first();
+
+        if ($place === null) {
+            return Place::query()->create([
+                'external_id' => $location['placeId'],
+                'address' => $location['address'],
+                'latitude' => $location['latitude'],
+                'longitude' => $location['longitude'],
+            ]);
+        }
+
+        $place->fill([
+            'address' => $location['address'],
+            'latitude' => $location['latitude'],
+            'longitude' => $location['longitude'],
+        ])->save();
+
+        return $place;
+    }
+
+    /**
+     * @param  list<string>  $codes
+     * @return list<string>
+     */
+    private function serviceAreaIds(array $codes): array
+    {
+        $normalized = array_map(
+            static fn (string $code): string => strtoupper($code),
+            $codes,
+        );
+
+        return ServiceArea::query()
+            ->whereIn('code', $normalized)
+            ->pluck('id')
+            ->all();
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $rendezvousPoints
      * @return list<array<string, mixed>>
      */
     private function routePoints(DeliveryJob $job, array $rendezvousPoints): array
     {
+        $job->loadMissing(['collectionPlace', 'deliveryPlace']);
+
         return [
             [
-                'placeId' => $job->collection_place_id,
-                'address' => $job->collection_address,
-                'latitude' => $job->collection_latitude,
-                'longitude' => $job->collection_longitude,
+                'placeId' => $job->collectionPlace->external_id,
+                'address' => $job->collectionPlace->address,
+                'latitude' => $job->collectionPlace->latitude,
+                'longitude' => $job->collectionPlace->longitude,
             ],
             ...$rendezvousPoints,
             [
-                'placeId' => $job->delivery_place_id,
-                'address' => $job->delivery_address,
-                'latitude' => $job->delivery_latitude,
-                'longitude' => $job->delivery_longitude,
+                'placeId' => $job->deliveryPlace->external_id,
+                'address' => $job->deliveryPlace->address,
+                'latitude' => $job->deliveryPlace->latitude,
+                'longitude' => $job->deliveryPlace->longitude,
             ],
         ];
     }
@@ -247,13 +305,18 @@ final class DeliveryJobService
      */
     private function createRelayLegs(User $actor, DeliveryJob $parent, array $routePoints): void
     {
+        $parent->loadMissing('serviceAreas');
+        $serviceAreaIds = $parent->serviceAreas->pluck('id')->all();
         $legCount = count($routePoints) - 1;
 
         for ($index = 0; $index < $legCount; $index++) {
             $collection = $routePoints[$index];
             $delivery = $routePoints[$index + 1];
 
-            DeliveryJob::query()->create([
+            $collectionPlace = $this->upsertPlace($collection);
+            $deliveryPlace = $this->upsertPlace($delivery);
+
+            $leg = DeliveryJob::query()->create([
                 'reference' => sprintf('%s-L%d', $parent->reference, $index + 1),
                 'status' => JobStatus::New,
                 'parent_job_id' => $parent->id,
@@ -261,18 +324,13 @@ final class DeliveryJobService
                 'sender_name' => $parent->sender_name,
                 'sender_phone' => $parent->sender_phone,
                 'sender_organisation' => $parent->sender_organisation,
-                'collection_place_id' => $collection['placeId'],
-                'collection_address' => $collection['address'],
-                'collection_latitude' => $collection['latitude'],
-                'collection_longitude' => $collection['longitude'],
-                'delivery_place_id' => $delivery['placeId'],
-                'delivery_address' => $delivery['address'],
-                'delivery_latitude' => $delivery['latitude'],
-                'delivery_longitude' => $delivery['longitude'],
+                'collection_place_id' => $collectionPlace->id,
+                'delivery_place_id' => $deliveryPlace->id,
                 'contents' => $parent->contents,
-                'service_areas' => $parent->service_areas,
                 'created_by_user_id' => $actor->id,
             ]);
+
+            $leg->serviceAreas()->sync($serviceAreaIds);
         }
     }
 
@@ -312,7 +370,14 @@ final class DeliveryJobService
             'user_id' => $actor->id,
         ]);
 
-        return $parent->refresh()->load('legs');
+        return $parent->refresh()->load([
+            'legs.collectionPlace',
+            'legs.deliveryPlace',
+            'legs.serviceAreas',
+            'collectionPlace',
+            'deliveryPlace',
+            'serviceAreas',
+        ]);
     }
 
     private function syncRelayParentFromLeg(DeliveryJob $leg): void
@@ -375,7 +440,11 @@ final class DeliveryJobService
     private function lockJob(string $jobId): DeliveryJob
     {
         /** @var DeliveryJob|null $locked */
-        $locked = DeliveryJob::query()->whereKey($jobId)->lockForUpdate()->first();
+        $locked = DeliveryJob::query()
+            ->with(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'legs'])
+            ->whereKey($jobId)
+            ->lockForUpdate()
+            ->first();
 
         if ($locked === null) {
             throw ValidationException::withMessages([
@@ -390,6 +459,7 @@ final class DeliveryJobService
     {
         /** @var OperationalShift|null $shift */
         $shift = OperationalShift::query()
+            ->with('rider')
             ->whereKey($shiftId)
             ->lockForUpdate()
             ->first();

@@ -24,9 +24,9 @@ class BikeResource extends JsonResource
         return [
             'id' => $this->id,
             'registration' => $this->registration,
-            'area' => $this->area,
-            'status' => $this->status,
-            'lastRecordedMileage' => $this->last_recorded_mileage,
+            'area' => $this->serviceArea?->code,
+            'status' => $this->isActive() ? 'active' : 'retired',
+            'lastRecordedMileage' => $this->currentMileage(),
             'purchasedAt' => $this->purchased_at?->toDateString(),
         ];
     }

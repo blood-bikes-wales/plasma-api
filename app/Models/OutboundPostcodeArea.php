@@ -13,8 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'outbound_postcode',
-    'area_code',
-    'area_full_name',
+    'service_area_id',
     'sort_order',
     'active',
     'updated_by_user_id',
@@ -33,6 +32,14 @@ class OutboundPostcodeArea extends Model
             'active' => 'boolean',
             'sort_order' => 'integer',
         ];
+    }
+
+    /**
+     * @return BelongsTo<ServiceArea, $this>
+     */
+    public function serviceArea(): BelongsTo
+    {
+        return $this->belongsTo(ServiceArea::class);
     }
 
     /**

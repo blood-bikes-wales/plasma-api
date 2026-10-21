@@ -13,17 +13,26 @@ return new class extends Migration
      */
     public function up(): void
     {
+        Schema::create('riders', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->unsignedBigInteger('external_id')->unique();
+            $table->string('name');
+            $table->timestamps();
+        });
+
         Schema::create('bikes', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('registration')->unique();
-            $table->unsignedInteger('last_recorded_mileage');
+            $table->foreignUuid('service_area_id')->constrained('service_areas')->restrictOnDelete();
+            $table->unsignedInteger('initial_mileage');
+            $table->timestamp('retired_at')->nullable();
+            $table->date('purchased_at')->nullable();
             $table->timestamps();
         });
 
         Schema::create('operational_shifts', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->unsignedBigInteger('rider_id');
-            $table->string('rider_name');
+            $table->foreignUuid('rider_id')->constrained('riders')->restrictOnDelete();
             $table->foreignUuid('bike_id')->constrained('bikes')->restrictOnDelete();
             $table->unsignedInteger('start_mileage');
             $table->text('mileage_variance_reason')->nullable();
@@ -38,7 +47,6 @@ return new class extends Migration
 
         Schema::create('mileage_readings', function (Blueprint $table) {
             $table->uuid('id')->primary();
-            $table->foreignUuid('bike_id')->constrained('bikes')->restrictOnDelete();
             $table->foreignUuid('operational_shift_id')->unique()->constrained('operational_shifts')->restrictOnDelete();
             $table->unsignedInteger('mileage');
             $table->text('reason')->nullable();
@@ -47,6 +55,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        MigrationHelper::setUuidPrimaryKeyDefault('riders');
         MigrationHelper::setUuidPrimaryKeyDefault('bikes');
         MigrationHelper::setUuidPrimaryKeyDefault('operational_shifts');
         MigrationHelper::setUuidPrimaryKeyDefault('mileage_readings');
@@ -63,5 +72,6 @@ return new class extends Migration
         Schema::dropIfExists('mileage_readings');
         Schema::dropIfExists('operational_shifts');
         Schema::dropIfExists('bikes');
+        Schema::dropIfExists('riders');
     }
 };

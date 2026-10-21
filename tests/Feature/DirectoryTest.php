@@ -84,11 +84,11 @@ class DirectoryTest extends TestCase
     {
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'last_recorded_mileage' => 15234,
+            'initial_mileage' => 15234,
         ]);
         Bike::factory()->create([
             'registration' => 'CF34 DEF',
-            'last_recorded_mileage' => 9820,
+            'initial_mileage' => 9820,
         ]);
 
         $this->fakeDirectory([$this->riderVolunteer()]);
@@ -111,12 +111,12 @@ class DirectoryTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'last_recorded_mileage' => 15300,
+            'initial_mileage' => 15300,
         ]);
         $shift = OperationalShift::factory()->for($bike)->create([
             'end_mileage' => 15300,
         ]);
-        MileageReading::factory()->for($bike)->for($shift)->create([
+        MileageReading::factory()->for($shift)->create([
             'mileage' => 15300,
             'reason' => 'Routine logoff',
             'recorded_at' => now()->subHour(),

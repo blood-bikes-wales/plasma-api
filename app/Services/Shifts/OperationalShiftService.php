@@ -5,6 +5,7 @@ namespace App\Services\Shifts;
 use App\Models\Bike;
 use App\Models\MileageReading;
 use App\Models\OperationalShift;
+use App\Models\Rider;
 use App\Models\User;
 use App\Services\ThreeRings\Data\Volunteer;
 use App\Services\ThreeRings\Exceptions\ThreeRingsException;
@@ -33,7 +34,7 @@ final class OperationalShiftService
     {
         return OperationalShift::query()
             ->active()
-            ->with('bike')
+            ->with(['bike', 'rider'])
             ->orderBy('logged_on_at')
             ->get();
     }
@@ -105,14 +106,14 @@ final class OperationalShiftService
         ?string $reason,
     ): OperationalShift {
         $bike = $this->lockBike($bikeId);
+        $rider = $this->upsertRider($volunteer);
 
-        $this->assertNoActiveShiftForRider($volunteer->id);
+        $this->assertNoActiveShiftForRider($rider->id);
         $this->assertNoActiveShiftForBike($bike->id);
         $this->assertMileageVarianceReason($bike, $startMileage, $reason);
 
         $shift = OperationalShift::query()->create([
-            'rider_id' => $volunteer->id,
-            'rider_name' => $volunteer->name,
+            'rider_id' => $rider->id,
             'bike_id' => $bike->id,
             'start_mileage' => $startMileage,
             'mileage_variance_reason' => $this->storedMileageVarianceReason($bike, $startMileage, $reason),
@@ -121,6 +122,7 @@ final class OperationalShiftService
         ]);
 
         $shift->setRelation('bike', $bike);
+        $shift->setRelation('rider', $rider);
 
         return $shift;
     }
@@ -144,12 +146,7 @@ final class OperationalShiftService
             'logged_off_by_user_id' => $actor->id,
         ])->save();
 
-        $bike = $locked->bike;
-        $bike->last_recorded_mileage = $endMileage;
-        $bike->save();
-
         MileageReading::query()->create([
-            'bike_id' => $bike->id,
             'operational_shift_id' => $locked->id,
             'mileage' => $endMileage,
             'reason' => $locked->mileage_variance_reason,
@@ -158,6 +155,25 @@ final class OperationalShiftService
         ]);
 
         return $locked;
+    }
+
+    private function upsertRider(Volunteer $volunteer): Rider
+    {
+        $rider = Rider::query()->where('external_id', $volunteer->id)->first();
+
+        if ($rider === null) {
+            return Rider::query()->create([
+                'external_id' => $volunteer->id,
+                'name' => $volunteer->name,
+            ]);
+        }
+
+        if ($rider->name !== $volunteer->name) {
+            $rider->name = $volunteer->name;
+            $rider->save();
+        }
+
+        return $rider;
     }
 
     private function lockBike(string $bikeId): Bike
@@ -183,7 +199,7 @@ final class OperationalShiftService
     {
         /** @var OperationalShift|null $locked */
         $locked = OperationalShift::query()
-            ->with('bike')
+            ->with(['bike', 'rider'])
             ->whereKey($shiftId)
             ->lockForUpdate()
             ->first();
@@ -246,7 +262,7 @@ final class OperationalShiftService
         throw new HttpException(503, 'Volunteer directory is unavailable.');
     }
 
-    private function assertNoActiveShiftForRider(int $riderId): void
+    private function assertNoActiveShiftForRider(string $riderId): void
     {
         $exists = OperationalShift::query()
             ->active()
@@ -278,7 +294,7 @@ final class OperationalShiftService
 
     private function assertMileageVarianceReason(Bike $bike, int $startMileage, ?string $reason): void
     {
-        if ($startMileage === $bike->last_recorded_mileage) {
+        if ($startMileage === $bike->currentMileage()) {
             return;
         }
 
@@ -309,7 +325,7 @@ final class OperationalShiftService
 
     private function storedMileageVarianceReason(Bike $bike, int $startMileage, ?string $reason): ?string
     {
-        if ($startMileage === $bike->last_recorded_mileage) {
+        if ($startMileage === $bike->currentMileage()) {
             return null;
         }
 

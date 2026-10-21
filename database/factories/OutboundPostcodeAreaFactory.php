@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\OutboundPostcodeArea;
+use App\Models\ServiceArea;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -21,8 +22,10 @@ class OutboundPostcodeAreaFactory extends Factory
 
         return [
             'outbound_postcode' => $postcode,
-            'area_code' => 'E',
-            'area_full_name' => 'East',
+            'service_area_id' => fn (): string => ServiceArea::query()->firstOrCreate(
+                ['code' => 'E'],
+                ['full_name' => 'East'],
+            )->id,
             'sort_order' => fake()->unique()->numberBetween(1, 100_000),
             'active' => true,
         ];

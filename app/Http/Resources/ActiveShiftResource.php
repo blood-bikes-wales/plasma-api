@@ -23,8 +23,8 @@ class ActiveShiftResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'riderId' => (string) $this->rider_id,
-            'riderName' => $this->rider_name,
+            'riderId' => (string) $this->rider->external_id,
+            'riderName' => $this->rider->name,
             'bikeId' => $this->bike_id,
             'bikeRegistration' => $this->bike->registration,
             'startMileage' => $this->start_mileage,

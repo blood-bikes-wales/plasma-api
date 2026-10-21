@@ -20,11 +20,17 @@ class DeliveryJobResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $collection = $this->collectionPlace;
+        $delivery = $this->deliveryPlace;
+        $shift = $this->operationalShift;
+        $rider = $shift?->rider;
+        $isRelay = $this->isRelayParent();
+
         return [
             'id' => $this->id,
             'reference' => $this->reference,
             'status' => $this->status->value,
-            'isRelay' => (bool) $this->is_relay,
+            'isRelay' => $isRelay,
             'parentJobId' => $this->parent_job_id,
             'legNumber' => $this->leg_number,
             'sender' => [
@@ -33,23 +39,27 @@ class DeliveryJobResource extends JsonResource
                 'organisation' => $this->sender_organisation,
             ],
             'collection' => [
-                'placeId' => $this->collection_place_id,
-                'address' => $this->collection_address,
-                'latitude' => $this->collection_latitude,
-                'longitude' => $this->collection_longitude,
+                'placeId' => $collection?->external_id,
+                'address' => $collection?->address,
+                'latitude' => $collection?->latitude,
+                'longitude' => $collection?->longitude,
             ],
             'delivery' => [
-                'placeId' => $this->delivery_place_id,
-                'address' => $this->delivery_address,
-                'latitude' => $this->delivery_latitude,
-                'longitude' => $this->delivery_longitude,
+                'placeId' => $delivery?->external_id,
+                'address' => $delivery?->address,
+                'latitude' => $delivery?->latitude,
+                'longitude' => $delivery?->longitude,
             ],
             'contents' => $this->contents,
-            'serviceAreas' => $this->service_areas,
+            'serviceAreas' => $this->whenLoaded(
+                'serviceAreas',
+                fn () => $this->serviceAreas->pluck('code')->values()->all(),
+                [],
+            ),
             'createdAt' => $this->created_at?->toIso8601String(),
-            'allocatedRider' => $this->allocated_rider_id === null ? null : [
-                'id' => (string) $this->allocated_rider_id,
-                'name' => $this->allocated_rider_name,
+            'allocatedRider' => $this->operational_shift_id === null ? null : [
+                'id' => (string) ($rider?->external_id),
+                'name' => $rider?->name,
                 'shiftId' => $this->operational_shift_id,
                 'allocatedAt' => $this->allocated_at?->toIso8601String(),
             ],
@@ -69,7 +79,7 @@ class DeliveryJobResource extends JsonResource
                 'cancelledAt' => $this->cancelled_at?->toIso8601String(),
             ],
             'legs' => $this->when(
-                $this->is_relay && $this->relationLoaded('legs'),
+                $isRelay && $this->relationLoaded('legs'),
                 fn () => DeliveryJobResource::collection($this->legs),
             ),
             'allowedActions' => $this->allowedActionNames(),

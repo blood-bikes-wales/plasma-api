@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Bike;
 use App\Models\OperationalShift;
+use App\Models\Rider;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -22,8 +23,7 @@ class OperationalShiftFactory extends Factory
         $startMileage = fake()->numberBetween(1_000, 50_000);
 
         return [
-            'rider_id' => fake()->unique()->numberBetween(100_000, 999_999),
-            'rider_name' => fake()->name(),
+            'rider_id' => Rider::factory(),
             'bike_id' => Bike::factory(),
             'start_mileage' => $startMileage,
             'mileage_variance_reason' => null,

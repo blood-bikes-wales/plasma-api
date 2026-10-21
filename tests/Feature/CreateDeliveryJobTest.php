@@ -73,11 +73,13 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('serviceAreas', ['E'])
             ->assertJsonMissingPath('data');
 
+        $this->assertDatabaseHas('places', [
+            'external_id' => 'ChIJCollectionPlaceId0001',
+        ]);
         $this->assertDatabaseHas('delivery_jobs', [
             'reference' => 'JB-0001',
             'status' => JobStatus::New->value,
             'sender_name' => 'Dr Patel',
-            'collection_place_id' => 'ChIJCollectionPlaceId0001',
         ]);
         $this->assertSame(1, DeliveryJob::query()->count());
     }

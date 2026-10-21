@@ -3,9 +3,9 @@
 namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
-use App\Enums\BikeStatus;
 use App\Models\Bike;
 use App\Models\OperationalShift;
+use App\Models\ServiceArea;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -87,15 +87,14 @@ class ManageBikeTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('registration', 'CF12 ABC')
             ->assertJsonPath('area', 'E')
-            ->assertJsonPath('status', BikeStatus::Active->value)
+            ->assertJsonPath('status', 'active')
             ->assertJsonPath('lastRecordedMileage', 12000)
             ->assertJsonPath('purchasedAt', '2024-03-15');
 
         $this->assertDatabaseHas('bikes', [
             'registration' => 'CF12 ABC',
-            'area' => 'E',
-            'status' => BikeStatus::Active->value,
-            'last_recorded_mileage' => 12000,
+            'service_area_id' => ServiceArea::query()->where('code', 'E')->value('id'),
+            'initial_mileage' => 12000,
         ]);
     }
 
@@ -154,7 +153,7 @@ class ManageBikeTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'area' => 'E',
+            'service_area_id' => ServiceArea::query()->where('code', 'E')->value('id'),
         ]);
 
         $this->fakeDirectory($this->trusteeVolunteer());
@@ -174,7 +173,7 @@ class ManageBikeTest extends TestCase
         $this->assertDatabaseHas('bikes', [
             'id' => $bike->id,
             'registration' => 'CF34 DEF',
-            'area' => 'NW',
+            'service_area_id' => ServiceArea::query()->where('code', 'NW')->value('id'),
         ]);
     }
 
@@ -201,10 +200,10 @@ class ManageBikeTest extends TestCase
         $this->withToken('valid-token')
             ->postJson("/api/bikes/{$bike->id}/retire")
             ->assertOk()
-            ->assertJsonPath('status', BikeStatus::Retired->value);
+            ->assertJsonPath('status', 'retired');
 
         $bike->refresh();
-        $this->assertSame(BikeStatus::Retired->value, $bike->status);
+        $this->assertFalse($bike->isActive());
         $this->assertNotNull($bike->retired_at);
     }
 
@@ -252,11 +251,11 @@ class ManageBikeTest extends TestCase
     {
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'area' => 'E',
+            'service_area_id' => ServiceArea::query()->where('code', 'E')->value('id'),
         ]);
         Bike::factory()->retired()->create([
             'registration' => 'CF34 DEF',
-            'area' => 'NW',
+            'service_area_id' => ServiceArea::query()->where('code', 'NW')->value('id'),
         ]);
 
         $this->fakeDirectory($this->trusteeVolunteer());
@@ -267,7 +266,7 @@ class ManageBikeTest extends TestCase
             ->assertOk()
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.registration', 'CF34 DEF')
-            ->assertJsonPath('data.0.status', BikeStatus::Retired->value);
+            ->assertJsonPath('data.0.status', 'retired');
 
         $this->withToken('valid-token')
             ->getJson('/api/bikes?area=E')
@@ -294,7 +293,7 @@ class ManageBikeTest extends TestCase
     public function test_logon_rejects_a_retired_bike(): void
     {
         $bike = Bike::factory()->retired()->create([
-            'last_recorded_mileage' => 5000,
+            'initial_mileage' => 5000,
         ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());

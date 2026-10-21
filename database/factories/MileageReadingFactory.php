@@ -2,7 +2,6 @@
 
 namespace Database\Factories;
 
-use App\Models\Bike;
 use App\Models\MileageReading;
 use App\Models\OperationalShift;
 use App\Models\User;
@@ -21,7 +20,6 @@ class MileageReadingFactory extends Factory
     public function definition(): array
     {
         return [
-            'bike_id' => Bike::factory(),
             'operational_shift_id' => OperationalShift::factory(),
             'mileage' => fake()->numberBetween(1_000, 50_000),
             'reason' => null,

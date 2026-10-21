@@ -18,7 +18,9 @@ class ActiveServiceAreaCode implements ValidationRule
 
         $exists = OutboundPostcodeArea::query()
             ->active()
-            ->where('area_code', strtoupper($value))
+            ->whereHas('serviceArea', static function ($query) use ($value): void {
+                $query->where('code', strtoupper($value));
+            })
             ->exists();
 
         if (! $exists) {

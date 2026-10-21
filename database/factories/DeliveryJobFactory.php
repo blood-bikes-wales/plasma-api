@@ -4,6 +4,8 @@ namespace Database\Factories;
 
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
+use App\Models\Place;
+use App\Models\ServiceArea;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -25,18 +27,27 @@ class DeliveryJobFactory extends Factory
             'sender_name' => fake()->name(),
             'sender_phone' => '029 2074 7747',
             'sender_organisation' => 'University Hospital of Wales',
-            'collection_place_id' => 'ChIJCollectionPlaceId0001',
-            'collection_address' => 'University Hospital of Wales, Cardiff CF14 4XW',
-            'collection_latitude' => 51.5068,
-            'collection_longitude' => -3.1900,
-            'delivery_place_id' => 'ChIJDeliveryPlaceId0001',
-            'delivery_address' => 'Royal Glamorgan Hospital, Llantrisant CF72 8XR',
-            'delivery_latitude' => 51.5470,
-            'delivery_longitude' => -3.3910,
+            'collection_place_id' => Place::factory(),
+            'delivery_place_id' => Place::factory(),
             'contents' => 'Blood samples',
-            'service_areas' => ['E'],
             'created_by_user_id' => User::factory(),
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterCreating(function (DeliveryJob $job): void {
+            if ($job->serviceAreas()->exists()) {
+                return;
+            }
+
+            $area = ServiceArea::query()->firstOrCreate(
+                ['code' => 'E'],
+                ['full_name' => 'East'],
+            );
+
+            $job->serviceAreas()->sync([$area->id]);
+        });
     }
 
     public function allocated(): static
