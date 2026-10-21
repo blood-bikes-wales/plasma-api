@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'bike_id',
     'operational_shift_id',
     'mileage',
     'reason',
@@ -31,14 +30,6 @@ class MileageReading extends Model
             'mileage' => 'integer',
             'recorded_at' => 'datetime',
         ];
-    }
-
-    /**
-     * @return BelongsTo<Bike, $this>
-     */
-    public function bike(): BelongsTo
-    {
-        return $this->belongsTo(Bike::class);
     }
 
     /**

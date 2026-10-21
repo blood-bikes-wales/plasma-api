@@ -3,31 +3,42 @@
 namespace Tests\Concerns;
 
 use App\Models\OutboundPostcodeArea;
+use App\Models\ServiceArea;
 
 trait SeedsServiceAreas
 {
     protected function seedServiceAreas(): void
     {
+        $east = ServiceArea::query()->create([
+            'code' => 'E',
+            'full_name' => 'East',
+        ]);
+        $northWest = ServiceArea::query()->create([
+            'code' => 'NW',
+            'full_name' => 'North West',
+        ]);
+        $inactive = ServiceArea::query()->create([
+            'code' => 'X',
+            'full_name' => 'Inactive Area',
+        ]);
+
         OutboundPostcodeArea::factory()->create([
             'outbound_postcode' => 'CF14',
-            'area_code' => 'E',
-            'area_full_name' => 'East',
+            'service_area_id' => $east->id,
             'sort_order' => 1,
             'active' => true,
         ]);
 
         OutboundPostcodeArea::factory()->create([
             'outbound_postcode' => 'LL57',
-            'area_code' => 'NW',
-            'area_full_name' => 'North West',
+            'service_area_id' => $northWest->id,
             'sort_order' => 2,
             'active' => true,
         ]);
 
         OutboundPostcodeArea::factory()->inactive()->create([
             'outbound_postcode' => 'ZZ99',
-            'area_code' => 'X',
-            'area_full_name' => 'Inactive Area',
+            'service_area_id' => $inactive->id,
             'sort_order' => 3,
         ]);
     }

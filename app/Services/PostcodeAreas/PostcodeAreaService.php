@@ -4,6 +4,7 @@ namespace App\Services\PostcodeAreas;
 
 use App\Models\OutboundPostcodeArea;
 use App\Models\OutboundPostcodeAreaAudit;
+use App\Models\ServiceArea;
 use App\Models\User;
 use App\Support\UkOutwardPostcode;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
@@ -22,16 +23,17 @@ final class PostcodeAreaService
      */
     public function listDistinctActiveServiceAreas(): Collection
     {
-        return DB::table('outbound_postcode_areas')
-            ->where('active', true)
-            ->select('area_code', 'area_full_name')
-            ->selectRaw('MIN(sort_order) as min_sort')
-            ->groupBy('area_code', 'area_full_name')
+        return DB::table('service_areas')
+            ->join('outbound_postcode_areas', 'service_areas.id', '=', 'outbound_postcode_areas.service_area_id')
+            ->where('outbound_postcode_areas.active', true)
+            ->select('service_areas.code', 'service_areas.full_name')
+            ->selectRaw('MIN(outbound_postcode_areas.sort_order) as min_sort')
+            ->groupBy('service_areas.code', 'service_areas.full_name')
             ->orderBy('min_sort')
             ->get()
             ->map(static fn (object $row): array => [
-                'code' => (string) $row->area_code,
-                'name' => (string) $row->area_full_name,
+                'code' => (string) $row->code,
+                'name' => (string) $row->full_name,
             ])
             ->values();
     }
@@ -41,7 +43,9 @@ final class PostcodeAreaService
      */
     public function list(?string $search, bool $includeInactive): EloquentCollection
     {
-        $query = OutboundPostcodeArea::query()->orderBy('sort_order');
+        $query = OutboundPostcodeArea::query()
+            ->with('serviceArea')
+            ->orderBy('sort_order');
 
         if (! $includeInactive) {
             $query->active();
@@ -53,8 +57,11 @@ final class PostcodeAreaService
             $query->where(function ($builder) use ($like): void {
                 $builder
                     ->whereRaw('LOWER(outbound_postcode) LIKE ?', [$like])
-                    ->orWhereRaw('LOWER(area_code) LIKE ?', [$like])
-                    ->orWhereRaw('LOWER(area_full_name) LIKE ?', [$like]);
+                    ->orWhereHas('serviceArea', static function ($areaQuery) use ($like): void {
+                        $areaQuery
+                            ->whereRaw('LOWER(code) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(full_name) LIKE ?', [$like]);
+                    });
             });
         }
 
@@ -76,6 +83,7 @@ final class PostcodeAreaService
         /** @var array{outboundPostcode: string, areaCode: string, areaFullName: string}|null $cached */
         $cached = Cache::remember($cacheKey, self::LOOKUP_TTL_SECONDS, function () use ($outward): ?array {
             $row = OutboundPostcodeArea::query()
+                ->with('serviceArea')
                 ->active()
                 ->where('outbound_postcode', $outward)
                 ->first();
@@ -86,8 +94,8 @@ final class PostcodeAreaService
 
             return [
                 'outboundPostcode' => $row->outbound_postcode,
-                'areaCode' => $row->area_code,
-                'areaFullName' => $row->area_full_name,
+                'areaCode' => $row->serviceArea->code,
+                'areaFullName' => $row->serviceArea->full_name,
             ];
         });
 
@@ -109,23 +117,25 @@ final class PostcodeAreaService
         $this->assertUniqueOutward($outward);
 
         $sortOrder = $payload['sortOrder'] ?? $this->nextSortOrder();
+        $serviceArea = $this->ensureServiceArea(strtoupper($payload['areaCode']), $payload['areaFullName']);
 
         $area = OutboundPostcodeArea::query()->create([
             'outbound_postcode' => $outward,
-            'area_code' => strtoupper($payload['areaCode']),
-            'area_full_name' => $payload['areaFullName'],
+            'service_area_id' => $serviceArea->id,
             'sort_order' => $sortOrder,
             'active' => $payload['active'] ?? true,
             'updated_by_user_id' => $actor->id,
         ]);
 
-        $this->audit($area, $actor, 'created', $area->only([
-            'outbound_postcode',
-            'area_code',
-            'area_full_name',
-            'sort_order',
-            'active',
-        ]));
+        $area->load('serviceArea');
+
+        $this->audit($area, $actor, 'created', [
+            'outbound_postcode' => $area->outbound_postcode,
+            'area_code' => $area->serviceArea->code,
+            'area_full_name' => $area->serviceArea->full_name,
+            'sort_order' => $area->sort_order,
+            'active' => $area->active,
+        ]);
         $this->forgetLookupCache($outward);
 
         Log::info('Outbound postcode area created.', [
@@ -148,13 +158,15 @@ final class PostcodeAreaService
      */
     public function update(User $actor, OutboundPostcodeArea $area, array $payload): OutboundPostcodeArea
     {
-        $before = $area->only([
-            'outbound_postcode',
-            'area_code',
-            'area_full_name',
-            'sort_order',
-            'active',
-        ]);
+        $area->loadMissing('serviceArea');
+
+        $before = [
+            'outbound_postcode' => $area->outbound_postcode,
+            'area_code' => $area->serviceArea->code,
+            'area_full_name' => $area->serviceArea->full_name,
+            'sort_order' => $area->sort_order,
+            'active' => $area->active,
+        ];
 
         $previousOutward = $area->outbound_postcode;
 
@@ -164,12 +176,19 @@ final class PostcodeAreaService
             $area->outbound_postcode = $outward;
         }
 
+        $areaCode = $area->serviceArea->code;
         if (array_key_exists('areaCode', $payload)) {
-            $area->area_code = strtoupper($payload['areaCode']);
+            $areaCode = strtoupper($payload['areaCode']);
         }
 
+        $areaFullName = $area->serviceArea->full_name;
         if (array_key_exists('areaFullName', $payload)) {
-            $area->area_full_name = $payload['areaFullName'];
+            $areaFullName = $payload['areaFullName'];
+        }
+
+        if (array_key_exists('areaCode', $payload) || array_key_exists('areaFullName', $payload)) {
+            $serviceArea = $this->ensureServiceArea($areaCode, $areaFullName);
+            $area->service_area_id = $serviceArea->id;
         }
 
         if (array_key_exists('sortOrder', $payload)) {
@@ -182,14 +201,15 @@ final class PostcodeAreaService
 
         $area->updated_by_user_id = $actor->id;
         $area->save();
+        $area->load('serviceArea');
 
-        $after = $area->only([
-            'outbound_postcode',
-            'area_code',
-            'area_full_name',
-            'sort_order',
-            'active',
-        ]);
+        $after = [
+            'outbound_postcode' => $area->outbound_postcode,
+            'area_code' => $area->serviceArea->code,
+            'area_full_name' => $area->serviceArea->full_name,
+            'sort_order' => $area->sort_order,
+            'active' => $area->active,
+        ];
 
         $action = 'updated';
         if (($before['active'] ?? null) !== ($after['active'] ?? null)) {
@@ -209,7 +229,7 @@ final class PostcodeAreaService
             'user_id' => $actor->id,
         ]);
 
-        return $area->refresh();
+        return $area->refresh()->load('serviceArea');
     }
 
     /**
@@ -230,6 +250,8 @@ final class PostcodeAreaService
         DB::transaction(function () use ($actor, $rows, &$created, &$updated): void {
             foreach ($rows as $row) {
                 $outward = $this->requireOutward($row['outboundPostcode']);
+                $serviceArea = $this->ensureServiceArea(strtoupper($row['areaCode']), $row['areaFullName']);
+
                 $existing = OutboundPostcodeArea::query()
                     ->where('outbound_postcode', $outward)
                     ->first();
@@ -237,16 +259,16 @@ final class PostcodeAreaService
                 if ($existing === null) {
                     $area = OutboundPostcodeArea::query()->create([
                         'outbound_postcode' => $outward,
-                        'area_code' => strtoupper($row['areaCode']),
-                        'area_full_name' => $row['areaFullName'],
+                        'service_area_id' => $serviceArea->id,
                         'sort_order' => $row['sortOrder'] ?? $this->nextSortOrder(),
                         'active' => $row['active'] ?? true,
                         'updated_by_user_id' => $actor->id,
                     ]);
+                    $area->load('serviceArea');
                     $this->audit($area, $actor, 'imported', [
                         'outbound_postcode' => $area->outbound_postcode,
-                        'area_code' => $area->area_code,
-                        'area_full_name' => $area->area_full_name,
+                        'area_code' => $area->serviceArea->code,
+                        'area_full_name' => $area->serviceArea->full_name,
                         'sort_order' => $area->sort_order,
                         'active' => $area->active,
                     ]);
@@ -256,17 +278,17 @@ final class PostcodeAreaService
                     continue;
                 }
 
-                $before = $existing->only([
-                    'outbound_postcode',
-                    'area_code',
-                    'area_full_name',
-                    'sort_order',
-                    'active',
-                ]);
+                $existing->loadMissing('serviceArea');
+                $before = [
+                    'outbound_postcode' => $existing->outbound_postcode,
+                    'area_code' => $existing->serviceArea->code,
+                    'area_full_name' => $existing->serviceArea->full_name,
+                    'sort_order' => $existing->sort_order,
+                    'active' => $existing->active,
+                ];
 
                 $existing->fill([
-                    'area_code' => strtoupper($row['areaCode']),
-                    'area_full_name' => $row['areaFullName'],
+                    'service_area_id' => $serviceArea->id,
                     'active' => $row['active'] ?? $existing->active,
                     'updated_by_user_id' => $actor->id,
                 ]);
@@ -277,16 +299,17 @@ final class PostcodeAreaService
                 }
 
                 $existing->save();
+                $existing->load('serviceArea');
 
                 $this->audit($existing, $actor, 'imported', [
                     'before' => $before,
-                    'after' => $existing->only([
-                        'outbound_postcode',
-                        'area_code',
-                        'area_full_name',
-                        'sort_order',
-                        'active',
-                    ]),
+                    'after' => [
+                        'outbound_postcode' => $existing->outbound_postcode,
+                        'area_code' => $existing->serviceArea->code,
+                        'area_full_name' => $existing->serviceArea->full_name,
+                        'sort_order' => $existing->sort_order,
+                        'active' => $existing->active,
+                    ],
                 ]);
                 $this->forgetLookupCache($outward);
                 $updated++;
@@ -300,6 +323,27 @@ final class PostcodeAreaService
         ]);
 
         return ['created' => $created, 'updated' => $updated];
+    }
+
+    private function ensureServiceArea(string $code, string $fullName): ServiceArea
+    {
+        $area = ServiceArea::query()->where('code', $code)->first();
+
+        if ($area === null) {
+            return ServiceArea::query()->create([
+                'code' => $code,
+                'full_name' => $fullName,
+            ]);
+        }
+
+        if ($area->full_name === $fullName) {
+            return $area;
+        }
+
+        $area->full_name = $fullName;
+        $area->save();
+
+        return $area;
     }
 
     private function requireOutward(string $value): string

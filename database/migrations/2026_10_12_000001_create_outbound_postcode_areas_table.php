@@ -12,8 +12,7 @@ return new class extends Migration
         Schema::create('outbound_postcode_areas', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->string('outbound_postcode', 8);
-            $table->string('area_code', 16);
-            $table->string('area_full_name', 255);
+            $table->foreignUuid('service_area_id')->constrained('service_areas')->restrictOnDelete();
             $table->unsignedInteger('sort_order');
             $table->boolean('active')->default(true);
             $table->foreignUuid('updated_by_user_id')->nullable()->constrained('users')->nullOnDelete();
@@ -21,7 +20,7 @@ return new class extends Migration
 
             $table->unique('outbound_postcode');
             $table->unique('sort_order');
-            $table->index(['area_code', 'active']);
+            $table->index(['service_area_id', 'active']);
             $table->index('active');
         });
 

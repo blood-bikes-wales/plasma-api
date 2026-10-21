@@ -2,20 +2,20 @@
 
 namespace App\Models;
 
-use App\Enums\BikeStatus;
 use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\BikeFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 #[Fillable([
     'registration',
-    'area',
-    'last_recorded_mileage',
-    'status',
+    'service_area_id',
+    'initial_mileage',
     'retired_at',
     'purchased_at',
 ])]
@@ -30,10 +30,18 @@ class Bike extends Model
     protected function casts(): array
     {
         return [
-            'last_recorded_mileage' => 'integer',
+            'initial_mileage' => 'integer',
             'retired_at' => 'datetime',
             'purchased_at' => 'date',
         ];
+    }
+
+    /**
+     * @return BelongsTo<ServiceArea, $this>
+     */
+    public function serviceArea(): BelongsTo
+    {
+        return $this->belongsTo(ServiceArea::class);
     }
 
     /**
@@ -45,16 +53,36 @@ class Bike extends Model
     }
 
     /**
-     * @return HasMany<MileageReading, $this>
+     * @return HasManyThrough<MileageReading, OperationalShift, $this>
      */
-    public function mileageReadings(): HasMany
+    public function mileageReadings(): HasManyThrough
     {
-        return $this->hasMany(MileageReading::class);
+        return $this->hasManyThrough(
+            MileageReading::class,
+            OperationalShift::class,
+            'bike_id',
+            'operational_shift_id',
+            'id',
+            'id',
+        );
     }
 
     public function isActive(): bool
     {
-        return $this->status === BikeStatus::Active->value;
+        return $this->retired_at === null;
+    }
+
+    public function currentMileage(): int
+    {
+        $latest = $this->relationLoaded('mileageReadings')
+            ? $this->mileageReadings->sortByDesc('recorded_at')->first()
+            : $this->mileageReadings()->orderByDesc('recorded_at')->first();
+
+        if ($latest !== null) {
+            return (int) $latest->mileage;
+        }
+
+        return (int) $this->initial_mileage;
     }
 
     /**
@@ -63,7 +91,7 @@ class Bike extends Model
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('status', BikeStatus::Active->value);
+        return $query->whereNull('retired_at');
     }
 
     /**
@@ -72,6 +100,6 @@ class Bike extends Model
      */
     public function scopeRetired(Builder $query): Builder
     {
-        return $query->where('status', BikeStatus::Retired->value);
+        return $query->whereNotNull('retired_at');
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\Bike;
+use App\Models\ServiceArea;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -33,15 +34,18 @@ class BikeIndexTest extends TestCase
 
     public function test_lists_active_bikes_in_registration_order(): void
     {
+        $east = ServiceArea::query()->firstOrCreate(['code' => 'E'], ['full_name' => 'East']);
+        $northWest = ServiceArea::query()->firstOrCreate(['code' => 'NW'], ['full_name' => 'North West']);
+
         Bike::factory()->create([
             'registration' => 'CF34 DEF',
-            'last_recorded_mileage' => 9820,
-            'area' => 'NW',
+            'initial_mileage' => 9820,
+            'service_area_id' => $northWest->id,
         ]);
         Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'last_recorded_mileage' => 15234,
-            'area' => 'E',
+            'initial_mileage' => 15234,
+            'service_area_id' => $east->id,
         ]);
         Bike::factory()->retired()->create([
             'registration' => 'CF56 GHI',

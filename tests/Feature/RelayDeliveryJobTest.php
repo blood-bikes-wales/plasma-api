@@ -7,6 +7,7 @@ use App\Enums\JobStatus;
 use App\Models\Bike;
 use App\Models\DeliveryJob;
 use App\Models\OperationalShift;
+use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -64,24 +65,21 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.1.reference', 'JB-0200-L2')
             ->assertJsonPath('legs.1.legNumber', 2);
 
-        $this->assertDatabaseHas('delivery_jobs', [
-            'id' => $job->id,
-            'is_relay' => true,
-        ]);
+        $this->assertTrue($job->fresh()->isRelayParent());
         $this->assertSame(3, DeliveryJob::query()->count());
     }
 
     public function test_relay_legs_run_independent_lifecycle_and_aggregate_parent_status(): void
     {
         $bike = Bike::factory()->create();
+        $riderOne = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
+        $riderTwo = Rider::factory()->create(['external_id' => 100002, 'name' => 'Sam Taylor']);
         $shiftOne = OperationalShift::factory()->create([
-            'rider_id' => 100001,
-            'rider_name' => 'Alex Morgan',
+            'rider_id' => $riderOne->id,
             'bike_id' => $bike->id,
         ]);
         $shiftTwo = OperationalShift::factory()->create([
-            'rider_id' => 100002,
-            'rider_name' => 'Sam Taylor',
+            'rider_id' => $riderTwo->id,
             'bike_id' => Bike::factory()->create()->id,
         ]);
 
@@ -191,7 +189,12 @@ class RelayDeliveryJobTest extends TestCase
 
     public function test_direct_lifecycle_actions_are_rejected_on_a_relay_parent(): void
     {
-        $job = DeliveryJob::factory()->create(['reference' => 'JB-0203', 'is_relay' => true]);
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0203']);
+        DeliveryJob::factory()->create([
+            'reference' => 'JB-0203-L1',
+            'parent_job_id' => $job->id,
+            'leg_number' => 1,
+        ]);
         $shift = OperationalShift::factory()->create();
 
         $this->fakeDirectory($this->volunteer('Controller'));

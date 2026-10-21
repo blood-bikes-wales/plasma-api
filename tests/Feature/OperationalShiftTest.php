@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\Bike;
 use App\Models\OperationalShift;
+use App\Models\Rider;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -43,11 +44,11 @@ class OperationalShiftTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF34 DEF',
-            'last_recorded_mileage' => 9820,
+            'initial_mileage' => 9820,
         ]);
+        $rider = Rider::factory()->create(['external_id' => 100002, 'name' => 'Mike Davies']);
         OperationalShift::factory()->create([
-            'rider_id' => 100002,
-            'rider_name' => 'Mike Davies',
+            'rider_id' => $rider->id,
             'bike_id' => $bike->id,
             'start_mileage' => 9820,
         ]);
@@ -92,7 +93,7 @@ class OperationalShiftTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '100001',
                 'bikeId' => $bike->id,
-                'startMileage' => $bike->last_recorded_mileage,
+                'startMileage' => $bike->currentMileage(),
             ])
             ->assertForbidden();
 
@@ -108,7 +109,7 @@ class OperationalShiftTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'last_recorded_mileage' => 15234,
+            'initial_mileage' => 15234,
         ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
@@ -131,8 +132,11 @@ class OperationalShiftTest extends TestCase
             ->assertJsonPath('mileageVarianceReason', null)
             ->assertJsonMissingPath('data');
 
+        $this->assertDatabaseHas('riders', [
+            'external_id' => 100001,
+            'name' => 'Alex Morgan',
+        ]);
         $this->assertDatabaseHas('operational_shifts', [
-            'rider_id' => 100001,
             'bike_id' => $bike->id,
             'start_mileage' => 15234,
             'logged_off_at' => null,
@@ -146,7 +150,7 @@ class OperationalShiftTest extends TestCase
             'google_id' => null,
         ]);
 
-        $bike = Bike::factory()->create(['last_recorded_mileage' => 1000]);
+        $bike = Bike::factory()->create(['initial_mileage' => 1000]);
 
         $this->fakeDirectory([$this->riderVolunteer()]);
         $this->mockVerifiedClaims();
@@ -162,7 +166,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logon_requires_a_reason_when_start_mileage_differs(): void
     {
-        $bike = Bike::factory()->create(['last_recorded_mileage' => 15234]);
+        $bike = Bike::factory()->create(['initial_mileage' => 15234]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -179,7 +183,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logon_accepts_a_mileage_variance_reason(): void
     {
-        $bike = Bike::factory()->create(['last_recorded_mileage' => 15234]);
+        $bike = Bike::factory()->create(['initial_mileage' => 15234]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -200,11 +204,11 @@ class OperationalShiftTest extends TestCase
     {
         $firstBike = Bike::factory()->create();
         $secondBike = Bike::factory()->create();
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
         OperationalShift::factory()->create([
-            'rider_id' => 100001,
-            'rider_name' => 'Alex Morgan',
+            'rider_id' => $rider->id,
             'bike_id' => $firstBike->id,
-            'start_mileage' => $firstBike->last_recorded_mileage,
+            'start_mileage' => $firstBike->currentMileage(),
         ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
@@ -214,7 +218,7 @@ class OperationalShiftTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '100001',
                 'bikeId' => $secondBike->id,
-                'startMileage' => $secondBike->last_recorded_mileage,
+                'startMileage' => $secondBike->currentMileage(),
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['riderId']);
@@ -223,10 +227,11 @@ class OperationalShiftTest extends TestCase
     public function test_a_bike_cannot_hold_two_active_shifts(): void
     {
         $bike = Bike::factory()->create();
+        $rider = Rider::factory()->create(['external_id' => 100003, 'name' => 'Other Rider']);
         OperationalShift::factory()->create([
-            'rider_id' => 100003,
+            'rider_id' => $rider->id,
             'bike_id' => $bike->id,
-            'start_mileage' => $bike->last_recorded_mileage,
+            'start_mileage' => $bike->currentMileage(),
         ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
@@ -236,7 +241,7 @@ class OperationalShiftTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '100001',
                 'bikeId' => $bike->id,
-                'startMileage' => $bike->last_recorded_mileage,
+                'startMileage' => $bike->currentMileage(),
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['bikeId']);
@@ -253,7 +258,7 @@ class OperationalShiftTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '999999',
                 'bikeId' => $bike->id,
-                'startMileage' => $bike->last_recorded_mileage,
+                'startMileage' => $bike->currentMileage(),
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['riderId']);
@@ -263,11 +268,11 @@ class OperationalShiftTest extends TestCase
     {
         $bike = Bike::factory()->create([
             'registration' => 'CF12 ABC',
-            'last_recorded_mileage' => 15234,
+            'initial_mileage' => 15234,
         ]);
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
         $shift = OperationalShift::factory()->create([
-            'rider_id' => 100001,
-            'rider_name' => 'Alex Morgan',
+            'rider_id' => $rider->id,
             'bike_id' => $bike->id,
             'start_mileage' => 15234,
             'mileage_variance_reason' => null,
@@ -287,9 +292,8 @@ class OperationalShiftTest extends TestCase
             ->assertJsonPath('bikeRegistration', 'CF12 ABC');
 
         $this->assertNotNull($shift->fresh()->logged_off_at);
-        $this->assertSame(15298, $bike->fresh()->last_recorded_mileage);
+        $this->assertSame(15298, $bike->fresh()->currentMileage());
         $this->assertDatabaseHas('mileage_readings', [
-            'bike_id' => $bike->id,
             'operational_shift_id' => $shift->id,
             'mileage' => 15298,
         ]);
@@ -350,7 +354,7 @@ class OperationalShiftTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '100001',
                 'bikeId' => $bike->id,
-                'startMileage' => $bike->last_recorded_mileage,
+                'startMileage' => $bike->currentMileage(),
             ])
             ->assertStatus(503);
     }

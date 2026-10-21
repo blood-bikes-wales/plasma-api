@@ -7,6 +7,7 @@ use App\Enums\JobStatus;
 use App\Models\Bike;
 use App\Models\DeliveryJob;
 use App\Models\OperationalShift;
+use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -60,9 +61,9 @@ class JobLifecycleTest extends TestCase
     public function test_a_controller_can_allocate_collect_deliver_a_job(): void
     {
         $bike = Bike::factory()->create();
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
         $shift = OperationalShift::factory()->create([
-            'rider_id' => 100001,
-            'rider_name' => 'Alex Morgan',
+            'rider_id' => $rider->id,
             'bike_id' => $bike->id,
         ]);
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0100']);
@@ -106,7 +107,7 @@ class JobLifecycleTest extends TestCase
         $this->assertDatabaseHas('delivery_jobs', [
             'id' => $job->id,
             'status' => JobStatus::Delivered->value,
-            'allocated_rider_id' => 100001,
+            'operational_shift_id' => $shift->id,
             'receipt_number' => 'RCP-9001',
             'recipient' => 'Dr Patel',
         ]);

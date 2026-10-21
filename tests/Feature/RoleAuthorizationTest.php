@@ -78,7 +78,7 @@ class RoleAuthorizationTest extends TestCase
             ->postJson('/api/shifts/logon', [
                 'riderId' => '100001',
                 'bikeId' => $bike->id,
-                'startMileage' => $bike->last_recorded_mileage,
+                'startMileage' => $bike->currentMileage(),
             ])
             ->assertForbidden();
     }

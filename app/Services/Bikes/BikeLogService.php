@@ -20,6 +20,7 @@ final class BikeLogService
         }
 
         return Bike::query()
+            ->with('serviceArea')
             ->whereRaw('LOWER(registration) LIKE ?', ['%'.Str::lower($needle).'%'])
             ->orderBy('registration')
             ->get();
@@ -29,9 +30,12 @@ final class BikeLogService
     {
         /** @var Bike $bike */
         $bike = Bike::query()
-            ->with(['mileageReadings' => static function ($query): void {
-                $query->orderByDesc('recorded_at');
-            }])
+            ->with([
+                'serviceArea',
+                'mileageReadings' => static function ($query): void {
+                    $query->orderByDesc('recorded_at');
+                },
+            ])
             ->findOrFail($bikeId);
 
         return $bike;
@@ -43,6 +47,7 @@ final class BikeLogService
     public function listActive(): EloquentCollection
     {
         return Bike::query()
+            ->with('serviceArea')
             ->active()
             ->orderBy('registration')
             ->get();
@@ -53,7 +58,7 @@ final class BikeLogService
      */
     public function listManaged(?string $status, ?string $area): EloquentCollection
     {
-        $query = Bike::query()->orderBy('registration');
+        $query = Bike::query()->with('serviceArea')->orderBy('registration');
 
         if ($status === 'retired') {
             $query->retired();
@@ -64,7 +69,9 @@ final class BikeLogService
         }
 
         if ($area !== null && $area !== '') {
-            $query->where('area', $area);
+            $query->whereHas('serviceArea', static function ($builder) use ($area): void {
+                $builder->where('code', strtoupper($area));
+            });
         }
 
         return $query->get();

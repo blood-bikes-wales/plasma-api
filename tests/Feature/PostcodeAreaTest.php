@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\OutboundPostcodeArea;
 use App\Models\OutboundPostcodeAreaAudit;
+use App\Models\ServiceArea;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -177,10 +178,10 @@ class PostcodeAreaTest extends TestCase
 
         $existing->refresh();
         $this->assertSame($originalSort, $existing->sort_order);
-        $this->assertSame('East Cardiff', $existing->area_full_name);
+        $this->assertSame('East Cardiff', $existing->serviceArea->full_name);
         $this->assertDatabaseHas('outbound_postcode_areas', [
             'outbound_postcode' => 'SA1',
-            'area_code' => 'S',
+            'service_area_id' => ServiceArea::query()->where('code', 'S')->value('id'),
         ]);
     }
 

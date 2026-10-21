@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
@@ -20,19 +21,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'sender_phone',
     'sender_organisation',
     'collection_place_id',
-    'collection_address',
-    'collection_latitude',
-    'collection_longitude',
     'delivery_place_id',
-    'delivery_address',
-    'delivery_latitude',
-    'delivery_longitude',
     'contents',
-    'service_areas',
     'created_by_user_id',
     'operational_shift_id',
-    'allocated_rider_id',
-    'allocated_rider_name',
     'allocated_at',
     'contents_confirmed',
     'suitably_sealed',
@@ -45,7 +37,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'cancelled_at',
     'parent_job_id',
     'leg_number',
-    'is_relay',
 ])]
 class DeliveryJob extends Model
 {
@@ -59,15 +50,8 @@ class DeliveryJob extends Model
     {
         return [
             'status' => JobStatus::class,
-            'collection_latitude' => 'float',
-            'collection_longitude' => 'float',
-            'delivery_latitude' => 'float',
-            'delivery_longitude' => 'float',
-            'service_areas' => 'array',
-            'allocated_rider_id' => 'integer',
             'contents_confirmed' => 'boolean',
             'suitably_sealed' => 'boolean',
-            'is_relay' => 'boolean',
             'leg_number' => 'integer',
             'allocated_at' => 'datetime',
             'collected_at' => 'datetime',
@@ -93,6 +77,35 @@ class DeliveryJob extends Model
     }
 
     /**
+     * @return BelongsTo<Place, $this>
+     */
+    public function collectionPlace(): BelongsTo
+    {
+        return $this->belongsTo(Place::class, 'collection_place_id');
+    }
+
+    /**
+     * @return BelongsTo<Place, $this>
+     */
+    public function deliveryPlace(): BelongsTo
+    {
+        return $this->belongsTo(Place::class, 'delivery_place_id');
+    }
+
+    /**
+     * @return BelongsToMany<ServiceArea, $this>
+     */
+    public function serviceAreas(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            ServiceArea::class,
+            'delivery_job_service_areas',
+            'delivery_job_id',
+            'service_area_id',
+        );
+    }
+
+    /**
      * @return BelongsTo<DeliveryJob, $this>
      */
     public function parentJob(): BelongsTo
@@ -110,7 +123,11 @@ class DeliveryJob extends Model
 
     public function isRelayParent(): bool
     {
-        return (bool) $this->is_relay;
+        if ($this->relationLoaded('legs')) {
+            return $this->legs->isNotEmpty();
+        }
+
+        return $this->legs()->exists();
     }
 
     public function isRelayLeg(): bool

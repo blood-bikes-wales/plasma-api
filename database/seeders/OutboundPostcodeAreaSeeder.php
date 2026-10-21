@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\OutboundPostcodeArea;
+use App\Models\ServiceArea;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\File;
 
@@ -43,11 +44,17 @@ class OutboundPostcodeAreaSeeder extends Seeder
                     continue;
                 }
 
+                $code = strtoupper($areaCode);
+
+                $serviceArea = ServiceArea::query()->updateOrCreate(
+                    ['code' => $code],
+                    ['full_name' => $areaName],
+                );
+
                 OutboundPostcodeArea::query()->updateOrCreate(
                     ['outbound_postcode' => strtoupper($outbound)],
                     [
-                        'area_code' => strtoupper($areaCode),
-                        'area_full_name' => $areaName,
+                        'service_area_id' => $serviceArea->id,
                         'sort_order' => (int) $sortOrder,
                         'active' => filter_var($active ?? 'true', FILTER_VALIDATE_BOOLEAN),
                     ],
