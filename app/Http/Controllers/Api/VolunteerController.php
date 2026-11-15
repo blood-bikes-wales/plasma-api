@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\VolunteerResource;
+use App\Services\Shifts\VolunteerAreaResolver;
 use App\Services\ThreeRings\Data\Volunteer;
 use App\Services\ThreeRings\Exceptions\ThreeRingsException;
 use App\Services\ThreeRings\ThreeRingsClient;
@@ -15,11 +16,21 @@ use Throwable;
 
 class VolunteerController extends Controller
 {
-    public function __construct(private readonly ThreeRingsClient $threeRings) {}
+    public function __construct(
+        private readonly ThreeRingsClient $threeRings,
+        private readonly VolunteerAreaResolver $areas,
+    ) {}
 
     public function index(): JsonResponse
     {
-        return VolunteerResource::collection($this->listVolunteers())->response();
+        $resources = $this->listVolunteers()->map(
+            fn (Volunteer $volunteer): VolunteerResource => new VolunteerResource(
+                $volunteer,
+                $this->areas->codesFor($volunteer),
+            ),
+        );
+
+        return VolunteerResource::collection($resources)->response();
     }
 
     /**

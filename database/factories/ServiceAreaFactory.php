@@ -20,6 +20,7 @@ class ServiceAreaFactory extends Factory
         return [
             'code' => strtoupper(fake()->unique()->lexify('??')),
             'full_name' => fake()->unique()->words(2, true),
+            'three_rings_role' => null,
         ];
     }
 }

@@ -7,12 +7,22 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * JSON shape matches Plasma Controller rider options (`id`, `name`).
+ * JSON shape matches Plasma Controller rider options (`id`, `name`, `areas`).
+ * `areas` holds the service-area codes the rider covers, derived from their
+ * Three Rings roles by the controller.
  *
  * @mixin Volunteer
  */
 class VolunteerResource extends JsonResource
 {
+    /**
+     * @param  list<string>  $areas
+     */
+    public function __construct(Volunteer $resource, private readonly array $areas = [])
+    {
+        parent::__construct($resource);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -21,6 +31,7 @@ class VolunteerResource extends JsonResource
         return [
             'id' => (string) $this->id,
             'name' => $this->name,
+            'areas' => $this->areas,
         ];
     }
 }

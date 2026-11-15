@@ -23,5 +23,6 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $this->call(OutboundPostcodeAreaSeeder::class);
+        $this->call(ServiceAreaThreeRingsRoleSeeder::class);
     }
 }

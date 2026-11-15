@@ -25,7 +25,10 @@ use Throwable;
  */
 final class OperationalShiftService
 {
-    public function __construct(private readonly ThreeRingsClient $threeRings) {}
+    public function __construct(
+        private readonly ThreeRingsClient $threeRings,
+        private readonly VolunteerAreaResolver $areas,
+    ) {}
 
     /**
      * @return Collection<int, OperationalShift>
@@ -110,6 +113,7 @@ final class OperationalShiftService
 
         $this->assertNoActiveShiftForRider($rider->id);
         $this->assertNoActiveShiftForBike($bike->id);
+        $this->assertBikeInRiderArea($bike, $volunteer);
         $this->assertMileageVarianceReason($bike, $startMileage, $reason);
 
         $shift = OperationalShift::query()->create([
@@ -288,6 +292,23 @@ final class OperationalShiftService
         if ($exists) {
             throw ValidationException::withMessages([
                 'bikeId' => ['This bike already has an active shift.'],
+            ]);
+        }
+    }
+
+    private function assertBikeInRiderArea(Bike $bike, Volunteer $volunteer): void
+    {
+        $riderAreas = $this->areas->codesFor($volunteer);
+
+        if ($riderAreas === []) {
+            throw ValidationException::withMessages([
+                'bikeId' => ['This rider has no area role in Three Rings, so no bike can be assigned.'],
+            ]);
+        }
+
+        if (! in_array($bike->serviceArea?->code, $riderAreas, true)) {
+            throw ValidationException::withMessages([
+                'bikeId' => ["The selected bike is not in this rider's area."],
             ]);
         }
     }

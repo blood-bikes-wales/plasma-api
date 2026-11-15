@@ -6,6 +6,7 @@ use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\Bike;
 use App\Models\OperationalShift;
 use App\Models\Rider;
+use App\Models\ServiceArea;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -32,6 +33,17 @@ class OperationalShiftTest extends TestCase
         ]);
 
         Http::preventStrayRequests();
+
+        ServiceArea::query()->create([
+            'code' => 'E',
+            'full_name' => 'East',
+            'three_rings_role' => 'Rider - East',
+        ]);
+        ServiceArea::query()->create([
+            'code' => 'C',
+            'full_name' => 'Carms',
+            'three_rings_role' => 'Rider - Carms',
+        ]);
     }
 
     public function test_unauthenticated_requests_are_denied(): void
@@ -247,6 +259,61 @@ class OperationalShiftTest extends TestCase
             ->assertJsonValidationErrors(['bikeId']);
     }
 
+    public function test_logon_accepts_a_bike_from_any_area_a_multi_area_rider_covers(): void
+    {
+        $carmsBike = $this->bikeInArea('C', ['initial_mileage' => 4000]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers($this->riderVolunteer(['Rider - East', 'Rider - Carms'])));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', [
+                'riderId' => '100001',
+                'bikeId' => $carmsBike->id,
+                'startMileage' => 4000,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('bikeId', $carmsBike->id);
+    }
+
+    public function test_logon_rejects_a_bike_from_an_area_the_rider_does_not_cover(): void
+    {
+        $carmsBike = $this->bikeInArea('C', ['initial_mileage' => 4000]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', [
+                'riderId' => '100001',
+                'bikeId' => $carmsBike->id,
+                'startMileage' => 4000,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId']);
+
+        $this->assertDatabaseCount('operational_shifts', 0);
+    }
+
+    public function test_logon_rejects_a_rider_with_no_area_role(): void
+    {
+        $bike = Bike::factory()->create(['initial_mileage' => 1000]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers($this->riderVolunteer(['Rider - Milk'])));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', [
+                'riderId' => '100001',
+                'bikeId' => $bike->id,
+                'startMileage' => 1000,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId']);
+
+        $this->assertDatabaseCount('operational_shifts', 0);
+    }
+
     public function test_logon_rejects_an_unknown_volunteer(): void
     {
         $bike = Bike::factory()->create();
@@ -360,16 +427,29 @@ class OperationalShiftTest extends TestCase
     }
 
     /**
+     * @param  array<string, mixed>  $attributes
+     */
+    private function bikeInArea(string $code, array $attributes = []): Bike
+    {
+        $area = ServiceArea::query()->where('code', $code)->firstOrFail();
+
+        return Bike::factory()->create([...$attributes, 'service_area_id' => $area->id]);
+    }
+
+    /**
+     * @param  list<string>  $roleNames
      * @return array<string, mixed>
      */
-    private function riderVolunteer(): array
+    private function riderVolunteer(array $roleNames = ['Rider', 'Rider - East']): array
     {
         return [
             'id' => 100001,
             'name' => 'Alex Morgan',
-            'roles' => [
-                ['role' => ['id' => 5001, 'name' => 'Rider']],
-            ],
+            'roles' => array_map(
+                fn (string $name, int $index): array => ['role' => ['id' => 5001 + $index, 'name' => $name]],
+                $roleNames,
+                array_keys($roleNames),
+            ),
             'volunteer_properties' => [
                 ['volunteer_property' => ['name' => 'Email', 'value' => 'rider@bloodbikes.wales']],
             ],
@@ -394,11 +474,12 @@ class OperationalShiftTest extends TestCase
     }
 
     /**
+     * @param  array<string, mixed>|null  $rider
      * @return list<array<string, mixed>>
      */
-    private function controllerAndRiderVolunteers(): array
+    private function controllerAndRiderVolunteers(?array $rider = null): array
     {
-        $rider = $this->riderVolunteer();
+        $rider ??= $this->riderVolunteer();
         $rider['volunteer_properties'] = [
             ['volunteer_property' => ['name' => 'Email', 'value' => 'alex@bloodbikes.wales']],
         ];
