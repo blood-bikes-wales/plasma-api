@@ -113,7 +113,6 @@ class RelayDeliveryJobTest extends TestCase
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$firstLeg->id}/actions/collect", [
                 'contentsConfirmed' => true,
-                'suitablySealed' => false,
                 'receiptNumber' => 'RCP-100',
                 'collectedAt' => '2026-08-29T12:00:00+01:00',
             ])

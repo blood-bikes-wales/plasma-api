@@ -27,8 +27,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'operational_shift_id',
     'allocated_at',
     'contents_confirmed',
-    'suitably_sealed',
-    'seal_number',
     'receipt_number',
     'collected_at',
     'recipient',
@@ -51,7 +49,6 @@ class DeliveryJob extends Model
         return [
             'status' => JobStatus::class,
             'contents_confirmed' => 'boolean',
-            'suitably_sealed' => 'boolean',
             'leg_number' => 'integer',
             'allocated_at' => 'datetime',
             'collected_at' => 'datetime',
