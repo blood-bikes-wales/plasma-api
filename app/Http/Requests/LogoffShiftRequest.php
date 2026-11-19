@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\BikeKeptAt;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class LogoffShiftRequest extends FormRequest
 {
@@ -13,8 +15,11 @@ class LogoffShiftRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $bikeKeptAt = $this->input('bikeKeptAt');
+
         $this->merge([
             'endMileage' => $this->input('endMileage', $this->input('end_mileage')),
+            'bikeKeptAt' => $bikeKeptAt === null || $bikeKeptAt === '' ? BikeKeptAt::Lockup->value : $bikeKeptAt,
         ]);
     }
 
@@ -26,6 +31,7 @@ class LogoffShiftRequest extends FormRequest
         return [
             'endMileage' => ['required', 'integer', 'min:0'],
             'faults' => ['nullable', 'string', 'max:2000'],
+            'bikeKeptAt' => ['required', Rule::enum(BikeKeptAt::class)],
         ];
     }
 }

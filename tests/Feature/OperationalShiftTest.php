@@ -372,6 +372,89 @@ class OperationalShiftTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
+    public function test_logoff_without_bike_kept_at_stores_lockup(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 150])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'bike_kept_at' => 'lockup',
+        ]);
+    }
+
+    public function test_logoff_treats_a_blank_bike_kept_at_as_lockup(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 150, 'bikeKeptAt' => ''])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'bike_kept_at' => 'lockup',
+        ]);
+    }
+
+    public function test_logoff_stores_home_when_the_bike_is_kept_at_home(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 150, 'bikeKeptAt' => 'home'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'bike_kept_at' => 'home',
+        ]);
+    }
+
+    public function test_logoff_stores_lockup_when_explicitly_chosen(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 150, 'bikeKeptAt' => 'lockup'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'bike_kept_at' => 'lockup',
+        ]);
+    }
+
+    public function test_logoff_rejects_an_unknown_bike_kept_at_value(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 150, 'bikeKeptAt' => 'garage'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeKeptAt']);
+
+        $this->assertNull($shift->fresh()->logged_off_at);
+    }
+
     public function test_logoff_rejects_end_mileage_below_start_mileage(): void
     {
         $shift = OperationalShift::factory()->create(['start_mileage' => 15234]);
