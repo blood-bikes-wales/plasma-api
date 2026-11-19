@@ -3,13 +3,17 @@ FROM composer:2 AS vendor
 
 WORKDIR /app
 
+# This stage only downloads packages. The app runs on the PHP version of the
+# final image below, so ignore the PHP version of the floating composer:2 image
+# (it moved to PHP 8.6 while the locked packages support up to 8.5).
 COPY composer.json composer.lock ./
 RUN composer install \
     --no-dev \
     --no-scripts \
     --no-autoloader \
     --prefer-dist \
-    --no-interaction
+    --no-interaction \
+    --ignore-platform-req=php
 
 COPY . .
 RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
