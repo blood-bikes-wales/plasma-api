@@ -51,6 +51,7 @@ class ShiftController extends Controller
             endMileage: (int) $request->validated('endMileage'),
             faults: $request->validated('faults'),
             bikeKeptAt: BikeKeptAt::from($request->validated('bikeKeptAt')),
+            mileageExplanation: $request->validated('mileageExplanation'),
         );
 
         return (new ActiveShiftResource($shift))->response();

@@ -32,6 +32,7 @@ class LogoffShiftRequest extends FormRequest
             'endMileage' => ['required', 'integer', 'min:0'],
             'faults' => ['nullable', 'string', 'max:2000'],
             'bikeKeptAt' => ['required', Rule::enum(BikeKeptAt::class)],
+            'mileageExplanation' => ['nullable', 'string', 'max:2000'],
         ];
     }
 }

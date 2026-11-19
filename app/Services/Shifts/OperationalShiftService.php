@@ -26,6 +26,12 @@ use Throwable;
  */
 final class OperationalShiftService
 {
+    /**
+     * A change in mileage over one shift (end - start) at or above this needs an explanation.
+     * Keep in sync with SILLY_MILEAGE_THRESHOLD in plasma-controller `app/lib/shifts.ts`.
+     */
+    public const SILLY_MILEAGE_THRESHOLD = 500;
+
     public function __construct(
         private readonly ThreeRingsClient $threeRings,
         private readonly VolunteerAreaResolver $areas,
@@ -83,8 +89,10 @@ final class OperationalShiftService
         int $endMileage,
         ?string $faults,
         BikeKeptAt $bikeKeptAt = BikeKeptAt::Lockup,
+        ?string $mileageExplanation = null,
     ): OperationalShift {
         $faults = $this->normaliseOptionalText($faults);
+        $mileageExplanation = $this->normaliseOptionalText($mileageExplanation);
 
         $shift = DB::transaction(fn (): OperationalShift => $this->completeShift(
             $actor,
@@ -92,6 +100,7 @@ final class OperationalShiftService
             $endMileage,
             $faults,
             $bikeKeptAt,
+            $mileageExplanation,
         ));
 
         Log::info('Rider logged off an operational shift.', [
@@ -140,18 +149,21 @@ final class OperationalShiftService
         int $endMileage,
         ?string $faults,
         BikeKeptAt $bikeKeptAt,
+        ?string $mileageExplanation,
     ): OperationalShift {
         $locked = $this->lockActiveShift($shift->id);
         $loggedOffAt = now();
 
         $this->assertLogoffIsAfterLogon($locked, $loggedOffAt);
         $this->assertEndMileageNotBelowStart($locked, $endMileage);
+        $this->assertMileageExplanationGiven($locked, $endMileage, $mileageExplanation);
 
         $locked->fill([
             'logged_off_at' => $loggedOffAt,
             'end_mileage' => $endMileage,
             'faults' => $faults,
             'bike_kept_at' => $bikeKeptAt,
+            'end_mileage_reason' => $this->isSillyMileageChange($locked, $endMileage) ? $mileageExplanation : null,
             'logged_off_by_user_id' => $actor->id,
         ])->save();
 
@@ -347,6 +359,20 @@ final class OperationalShiftService
                 'endMileage' => ["End mileage cannot be lower than the start mileage of {$shift->start_mileage}."],
             ]);
         }
+    }
+
+    private function assertMileageExplanationGiven(OperationalShift $shift, int $endMileage, ?string $explanation): void
+    {
+        if ($this->isSillyMileageChange($shift, $endMileage) && $explanation === null) {
+            throw ValidationException::withMessages([
+                'mileageExplanation' => ['Enter a reason for the mileage change.'],
+            ]);
+        }
+    }
+
+    private function isSillyMileageChange(OperationalShift $shift, int $endMileage): bool
+    {
+        return $endMileage - $shift->start_mileage >= self::SILLY_MILEAGE_THRESHOLD;
     }
 
     private function storedMileageVarianceReason(Bike $bike, int $startMileage, ?string $reason): ?string

@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'end_mileage',
     'faults',
     'bike_kept_at',
+    'end_mileage_reason',
     'logged_off_by_user_id',
 ])]
 class OperationalShift extends Model

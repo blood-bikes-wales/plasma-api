@@ -470,6 +470,87 @@ class OperationalShiftTest extends TestCase
             ->assertJsonValidationErrors(['endMileage']);
     }
 
+    public function test_logoff_accepts_a_mileage_change_just_under_the_threshold_without_an_explanation(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 15000]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 15499])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'end_mileage' => 15499,
+            'end_mileage_reason' => null,
+        ]);
+    }
+
+    public function test_logoff_requires_an_explanation_for_a_mileage_change_of_500(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 15000]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 15500])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mileageExplanation']);
+
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 15500, 'mileageExplanation' => '   '])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mileageExplanation']);
+
+        $this->assertNull($shift->fresh()->logged_off_at);
+    }
+
+    public function test_logoff_stores_the_explanation_for_a_mileage_change_of_500(): void
+    {
+        $shift = OperationalShift::factory()->create([
+            'start_mileage' => 15000,
+            'mileage_variance_reason' => 'Logon reason',
+        ]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", [
+                'endMileage' => 15500,
+                'mileageExplanation' => '  Long distance transfer to Aberdeen  ',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'end_mileage' => 15500,
+            'end_mileage_reason' => 'Long distance transfer to Aberdeen',
+            'mileage_variance_reason' => 'Logon reason',
+        ]);
+    }
+
+    public function test_logoff_rejects_an_overlong_mileage_explanation(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", [
+                'endMileage' => 700,
+                'mileageExplanation' => str_repeat('a', 2001),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mileageExplanation']);
+    }
+
     public function test_logoff_rejects_an_already_logged_off_shift(): void
     {
         $shift = OperationalShift::factory()->loggedOff()->create();
