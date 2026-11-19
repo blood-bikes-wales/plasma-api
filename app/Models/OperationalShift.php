@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\BikeKeptAt;
 use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\OperationalShiftFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -21,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'logged_off_at',
     'end_mileage',
     'faults',
+    'bike_kept_at',
     'logged_off_by_user_id',
 ])]
 class OperationalShift extends Model
@@ -38,6 +40,7 @@ class OperationalShift extends Model
             'end_mileage' => 'integer',
             'logged_on_at' => 'datetime',
             'logged_off_at' => 'datetime',
+            'bike_kept_at' => BikeKeptAt::class,
         ];
     }
 

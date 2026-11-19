@@ -2,6 +2,7 @@
 
 namespace App\Services\Shifts;
 
+use App\Enums\BikeKeptAt;
 use App\Models\Bike;
 use App\Models\MileageReading;
 use App\Models\OperationalShift;
@@ -81,6 +82,7 @@ final class OperationalShiftService
         OperationalShift $shift,
         int $endMileage,
         ?string $faults,
+        BikeKeptAt $bikeKeptAt = BikeKeptAt::Lockup,
     ): OperationalShift {
         $faults = $this->normaliseOptionalText($faults);
 
@@ -89,6 +91,7 @@ final class OperationalShiftService
             $shift,
             $endMileage,
             $faults,
+            $bikeKeptAt,
         ));
 
         Log::info('Rider logged off an operational shift.', [
@@ -136,6 +139,7 @@ final class OperationalShiftService
         OperationalShift $shift,
         int $endMileage,
         ?string $faults,
+        BikeKeptAt $bikeKeptAt,
     ): OperationalShift {
         $locked = $this->lockActiveShift($shift->id);
         $loggedOffAt = now();
@@ -147,6 +151,7 @@ final class OperationalShiftService
             'logged_off_at' => $loggedOffAt,
             'end_mileage' => $endMileage,
             'faults' => $faults,
+            'bike_kept_at' => $bikeKeptAt,
             'logged_off_by_user_id' => $actor->id,
         ])->save();
 

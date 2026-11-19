@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\BikeKeptAt;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\LogoffShiftRequest;
 use App\Http\Requests\LogonShiftRequest;
@@ -49,6 +50,7 @@ class ShiftController extends Controller
             shift: $shift,
             endMileage: (int) $request->validated('endMileage'),
             faults: $request->validated('faults'),
+            bikeKeptAt: BikeKeptAt::from($request->validated('bikeKeptAt')),
         );
 
         return (new ActiveShiftResource($shift))->response();

@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\BikeKeptAt;
 use App\Models\Bike;
 use App\Models\OperationalShift;
 use App\Models\Rider;
@@ -32,6 +33,7 @@ class OperationalShiftFactory extends Factory
             'logged_off_at' => null,
             'end_mileage' => null,
             'faults' => null,
+            'bike_kept_at' => BikeKeptAt::Lockup,
             'logged_off_by_user_id' => null,
         ];
     }
