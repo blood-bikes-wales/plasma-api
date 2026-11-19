@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
+use App\Models\ServiceArea;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -66,6 +67,33 @@ class VolunteerIndexTest extends TestCase
             ->assertJsonPath('data.1.name', 'Mike Davies');
     }
 
+    public function test_includes_the_service_area_codes_each_volunteer_covers(): void
+    {
+        ServiceArea::query()->create(['code' => 'E', 'full_name' => 'East', 'three_rings_role' => 'Rider - East']);
+        ServiceArea::query()->create(['code' => 'C', 'full_name' => 'Carms', 'three_rings_role' => 'Rider - Carms']);
+
+        Http::fake([
+            'www.3r.org.uk/directory.json*' => Http::response([
+                'volunteers' => [
+                    $this->volunteer(100001, 'Alex Morgan', ['Controller', 'Rider - East', 'Rider - Carms', 'Rota manager - East']),
+                    $this->volunteer(100002, 'Mike Davies', ['Rider - Milk']),
+                    $this->volunteer(100003, 'Sam Jones', ['Rider - East']),
+                ],
+            ]),
+        ]);
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/volunteers')
+            ->assertOk()
+            ->assertJsonPath('data.0.name', 'Alex Morgan')
+            ->assertJsonPath('data.0.areas', ['E', 'C'])
+            ->assertJsonPath('data.1.name', 'Mike Davies')
+            ->assertJsonPath('data.1.areas', [])
+            ->assertJsonPath('data.2.name', 'Sam Jones')
+            ->assertJsonPath('data.2.areas', ['E']);
+    }
+
     public function test_returns_503_when_the_directory_is_unavailable(): void
     {
         Http::fake([
@@ -81,6 +109,26 @@ class VolunteerIndexTest extends TestCase
         $this->withToken('valid-token')
             ->getJson('/api/volunteers')
             ->assertStatus(503);
+    }
+
+    /**
+     * @param  list<string>  $roleNames
+     * @return array<string, mixed>
+     */
+    private function volunteer(int $id, string $name, array $roleNames): array
+    {
+        return [
+            'id' => $id,
+            'name' => $name,
+            'roles' => array_map(
+                fn (string $roleName, int $index): array => ['role' => ['id' => 5000 + $index, 'name' => $roleName]],
+                $roleNames,
+                array_keys($roleNames),
+            ),
+            'volunteer_properties' => [
+                ['volunteer_property' => ['name' => 'Email', 'value' => $id === 100001 ? 'rider@bloodbikes.wales' : "volunteer{$id}@bloodbikes.wales"]],
+            ],
+        ];
     }
 
     /**

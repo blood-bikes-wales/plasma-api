@@ -94,11 +94,11 @@ Do not document routes that are not registered.
 | POST | `/api/bikes` | `auth.google` + trustee/admin (`manage-bikes`) | Create bike; body `{ registration, area, lastRecordedMileage, purchasedAt? }`; 201 |
 | PATCH | `/api/bikes/{id}` | `auth.google` + trustee/admin (`manage-bikes`) | Update registration, area, purchasedAt |
 | POST | `/api/bikes/{id}/retire` | `auth.google` + trustee/admin (`manage-bikes`) | Retire bike (no hard delete) |
-| GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name } ] }` from Three Rings — rider picker at logon |
+| GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name, areas } ] }` from Three Rings — rider picker at logon. `areas` is the list of service-area codes the rider covers, taken from their `Rider - <area>` roles via `service_areas.three_rings_role` (empty when the rider has no area role) |
 | GET | `/api/directory/volunteers` | `auth.google` + any Plasma role (`view-directory`) | Volunteer search; query `q`, `role`, `area` (all optional; empty if all blank) |
 | GET | `/api/directory/bikes` | `auth.google` + any Plasma role (`view-directory`) | Bike search by registration; query `q` (empty if blank) |
 | GET | `/api/directory/bikes/{id}` | `auth.google` + any Plasma role (`view-directory`) | Bike detail with `mileageHistory` |
-| POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …) |
+| POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …). The bike must be in one of the rider's areas (see `areas` on `/api/volunteers`); otherwise 422 on `bikeId` |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults? }` |
 | GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled) |
 | POST | `/api/jobs` | `auth.google` + controller (`create-job`) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`); 201 |

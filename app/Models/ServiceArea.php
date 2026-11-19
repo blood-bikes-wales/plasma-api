@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'code',
     'full_name',
+    'three_rings_role',
 ])]
 class ServiceArea extends Model
 {
