@@ -8,6 +8,7 @@ use App\Models\DeliveryJob;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\SeedsServiceAreas;
 use Tests\TestCase;
 
@@ -170,6 +171,90 @@ class CreateDeliveryJobTest extends TestCase
             ->postJson('/api/jobs', $payload)
             ->assertCreated()
             ->assertJsonPath('collection.placeId', 'ChIJCollectionPlaceId0001');
+    }
+
+    #[DataProvider('validPhoneProvider')]
+    public function test_valid_uk_phone_numbers_are_accepted_as_typed(string $phone): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['sender']['phone'] = $phone;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('sender.phone', trim($phone));
+    }
+
+    #[DataProvider('invalidPhoneProvider')]
+    public function test_invalid_phone_numbers_are_rejected(?string $phone): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['sender']['phone'] = $phone;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['sender.phone']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_an_invalid_phone_number_gets_the_uk_phone_message(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['sender']['phone'] = 'abc';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJson([
+                'errors' => [
+                    'sender.phone' => ['Enter a valid UK phone number, for example 029 2074 7747'],
+                ],
+            ]);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function validPhoneProvider(): array
+    {
+        return [
+            'landline, no spaces' => ['02920747747'],
+            'landline, spaces' => ['029 2074 7747'],
+            'landline, +44' => ['+44 29 2074 7747'],
+            'mobile' => ['07700 900101'],
+            'brackets and hyphens' => ['(029) 2074-7747'],
+            'ten digits' => ['0800 123 456'],
+        ];
+    }
+
+    /**
+     * @return array<string, array{string|null}>
+     */
+    public static function invalidPhoneProvider(): array
+    {
+        return [
+            'letters' => ['abc'],
+            'letters in number' => ['029 2074 77AB'],
+            'too short' => ['123'],
+            'too long' => ['0292074774712345'],
+            'nine digits' => ['029207477'],
+            'twelve digits' => ['029207477471'],
+            'no leading zero' => ['2920747747'],
+            'international' => ['+1 202 555 0143'],
+            'empty' => [''],
+            'missing' => [null],
+        ];
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Rules\ActiveServiceAreaCode;
+use App\Rules\UkPhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StoreDeliveryJobRequest extends FormRequest
@@ -39,7 +40,7 @@ class StoreDeliveryJobRequest extends FormRequest
         return [
             'sender' => ['required', 'array'],
             'sender.name' => ['required', 'string', 'max:255'],
-            'sender.phone' => ['required', 'string', 'max:50'],
+            'sender.phone' => ['required', 'string', 'max:50', new UkPhoneNumber],
             'sender.organisation' => ['nullable', 'string', 'max:255'],
             'collection' => ['required', 'array'],
             'collection.placeId' => ['required', 'string', 'max:255'],
