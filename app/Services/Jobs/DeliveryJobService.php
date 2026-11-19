@@ -155,8 +155,6 @@ final class DeliveryJobService
             $locked->fill([
                 'status' => JobStatus::Collected,
                 'contents_confirmed' => (bool) $payload['contentsConfirmed'],
-                'suitably_sealed' => (bool) $payload['suitablySealed'],
-                'seal_number' => $this->normaliseOptionalText($payload['sealNumber'] ?? null),
                 'receipt_number' => $payload['receiptNumber'],
                 'collected_at' => $this->parseTimestamp($payload['collectedAt'] ?? null) ?? now(),
             ])->save();

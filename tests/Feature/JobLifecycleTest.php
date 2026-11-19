@@ -10,6 +10,7 @@ use App\Models\OperationalShift;
 use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 class JobLifecycleTest extends TestCase
@@ -83,15 +84,14 @@ class JobLifecycleTest extends TestCase
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$job->id}/actions/collect", [
                 'contentsConfirmed' => true,
-                'suitablySealed' => true,
-                'sealNumber' => 'SEAL-42',
                 'receiptNumber' => 'RCP-9001',
                 'collectedAt' => '2026-08-29T12:30:00+01:00',
             ])
             ->assertOk()
             ->assertJsonPath('status', JobStatus::Collected->value)
             ->assertJsonPath('collectionRecord.receiptNumber', 'RCP-9001')
-            ->assertJsonPath('collectionRecord.sealNumber', 'SEAL-42')
+            ->assertJsonMissingPath('collectionRecord.suitablySealed')
+            ->assertJsonMissingPath('collectionRecord.sealNumber')
             ->assertJsonPath('allowedActions', ['deliver', 'cancel']);
 
         $this->withToken('valid-token')
@@ -127,7 +127,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonValidationErrors(['shiftId']);
     }
 
-    public function test_collect_requires_a_seal_number_when_suitably_sealed(): void
+    public function test_collect_ignores_legacy_seal_keys_from_an_older_client(): void
     {
         $job = DeliveryJob::factory()->allocated()->create();
 
@@ -137,11 +137,22 @@ class JobLifecycleTest extends TestCase
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$job->id}/actions/collect", [
                 'contentsConfirmed' => true,
-                'suitablySealed' => true,
+                'suitablySealed' => false,
+                'sealNumber' => 'SEAL-42',
                 'receiptNumber' => 'RCP-1',
             ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['sealNumber']);
+            ->assertOk()
+            ->assertJsonPath('status', JobStatus::Collected->value)
+            ->assertJsonPath('collectionRecord.receiptNumber', 'RCP-1')
+            ->assertJsonMissingPath('collectionRecord.suitablySealed')
+            ->assertJsonMissingPath('collectionRecord.sealNumber');
+    }
+
+    public function test_delivery_jobs_table_has_no_seal_columns(): void
+    {
+        $this->assertFalse(Schema::hasColumn('delivery_jobs', 'suitably_sealed'));
+        $this->assertFalse(Schema::hasColumn('delivery_jobs', 'seal_number'));
+        $this->assertTrue(Schema::hasColumn('delivery_jobs', 'receipt_number'));
     }
 
     public function test_invalid_transitions_are_rejected_with_allowed_actions(): void

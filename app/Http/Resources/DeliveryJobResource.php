@@ -65,8 +65,6 @@ class DeliveryJobResource extends JsonResource
             ],
             'collectionRecord' => $this->collected_at === null ? null : [
                 'contentsConfirmed' => $this->contents_confirmed,
-                'suitablySealed' => $this->suitably_sealed,
-                'sealNumber' => $this->seal_number,
                 'receiptNumber' => $this->receipt_number,
                 'collectedAt' => $this->collected_at?->toIso8601String(),
             ],
