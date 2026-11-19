@@ -566,6 +566,330 @@ class OperationalShiftTest extends TestCase
             ->assertJsonValidationErrors(['shift']);
     }
 
+    public function test_logon_without_a_bike_creates_an_active_shift_with_no_bike(): void
+    {
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', ['riderId' => '100001'])
+            ->assertCreated()
+            ->assertJsonPath('riderId', '100001')
+            ->assertJsonPath('bikeId', null)
+            ->assertJsonPath('bikeRegistration', null)
+            ->assertJsonPath('startMileage', null);
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'bike_id' => null,
+            'start_mileage' => null,
+            'logged_off_at' => null,
+        ]);
+
+        $this->mockVerifiedClaims();
+        $this->withToken('valid-token')
+            ->getJson('/api/shifts/active')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.bikeRegistration', null);
+    }
+
+    public function test_two_riders_can_be_on_duty_without_a_bike(): void
+    {
+        OperationalShift::factory()->withoutBike()->create([
+            'rider_id' => Rider::factory()->create(['external_id' => 100002])->id,
+        ]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', ['riderId' => '100001'])
+            ->assertCreated();
+
+        $this->assertDatabaseCount('operational_shifts', 2);
+    }
+
+    public function test_a_bike_less_logon_still_rejects_a_rider_who_is_already_on_duty(): void
+    {
+        $rider = Rider::factory()->create(['external_id' => 100001]);
+        OperationalShift::factory()->withoutBike()->create(['rider_id' => $rider->id]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', ['riderId' => '100001'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['riderId']);
+    }
+
+    public function test_logon_rejects_a_bike_without_a_start_mileage(): void
+    {
+        $bike = Bike::factory()->create();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', ['riderId' => '100001', 'bikeId' => $bike->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['startMileage']);
+
+        $this->assertDatabaseCount('operational_shifts', 0);
+    }
+
+    public function test_logon_rejects_a_start_mileage_without_a_bike(): void
+    {
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/shifts/logon', ['riderId' => '100001', 'startMileage' => 1000])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId']);
+
+        $this->assertDatabaseCount('operational_shifts', 0);
+    }
+
+    public function test_controller_can_assign_a_bike_to_a_shift_without_one(): void
+    {
+        $bike = $this->bikeInArea('E', ['registration' => 'CF12 ABC', 'initial_mileage' => 15234]);
+        $shift = $this->bikelessShift();
+        $loggedOnAt = $shift->logged_on_at->toIso8601String();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 15234,
+            ])
+            ->assertOk()
+            ->assertJsonPath('id', $shift->id)
+            ->assertJsonPath('bikeId', $bike->id)
+            ->assertJsonPath('bikeRegistration', 'CF12 ABC')
+            ->assertJsonPath('startMileage', 15234)
+            ->assertJsonPath('startedAt', $loggedOnAt);
+
+        $this->assertDatabaseHas('operational_shifts', [
+            'id' => $shift->id,
+            'bike_id' => $bike->id,
+            'start_mileage' => 15234,
+            'logged_off_at' => null,
+        ]);
+    }
+
+    public function test_assigning_a_bike_requires_a_reason_when_the_mileage_differs(): void
+    {
+        $bike = $this->bikeInArea('E', ['initial_mileage' => 15234]);
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 15300,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mileageVarianceReason']);
+
+        $this->assertNull($shift->fresh()->bike_id);
+
+        $this->mockVerifiedClaims();
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 15300,
+                'mileageVarianceReason' => 'Odometer replaced',
+            ])
+            ->assertOk()
+            ->assertJsonPath('startMileage', 15300)
+            ->assertJsonPath('mileageVarianceReason', 'Odometer replaced');
+    }
+
+    public function test_assigning_a_bike_rejects_a_bike_from_an_area_the_rider_does_not_cover(): void
+    {
+        $carmsBike = $this->bikeInArea('C', ['initial_mileage' => 4000]);
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $carmsBike->id,
+                'startMileage' => 4000,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId']);
+
+        $this->assertNull($shift->fresh()->bike_id);
+    }
+
+    public function test_assigning_a_bike_rejects_a_bike_already_on_another_active_shift(): void
+    {
+        $bike = $this->bikeInArea('E', ['initial_mileage' => 4000]);
+        OperationalShift::factory()->create(['bike_id' => $bike->id, 'start_mileage' => 4000]);
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 4000,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId']);
+    }
+
+    public function test_assigning_a_bike_rejects_a_shift_that_already_has_a_bike(): void
+    {
+        $existing = $this->bikeInArea('E', ['initial_mileage' => 100]);
+        $other = $this->bikeInArea('E', ['initial_mileage' => 200]);
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
+        $shift = OperationalShift::factory()->create([
+            'rider_id' => $rider->id,
+            'bike_id' => $existing->id,
+            'start_mileage' => 100,
+        ]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $other->id,
+                'startMileage' => 200,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['shift']);
+
+        $this->assertSame($existing->id, $shift->fresh()->bike_id);
+    }
+
+    public function test_assigning_a_bike_rejects_a_logged_off_shift(): void
+    {
+        $bike = $this->bikeInArea('E', ['initial_mileage' => 200]);
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
+        $shift = OperationalShift::factory()->withoutBike()->create([
+            'rider_id' => $rider->id,
+            'logged_off_at' => now(),
+            'logged_off_by_user_id' => User::factory()->create()->id,
+        ]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 200,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['shift']);
+
+        $this->assertNull($shift->fresh()->bike_id);
+    }
+
+    public function test_assigning_a_bike_requires_a_bike_and_start_mileage(): void
+    {
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['bikeId', 'startMileage']);
+    }
+
+    public function test_rider_cannot_assign_a_bike(): void
+    {
+        $bike = $this->bikeInArea('E', ['initial_mileage' => 200]);
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->riderVolunteer());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 200,
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_logoff_of_a_shift_without_a_bike_needs_no_mileage_or_bike_location(): void
+    {
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['faults' => 'None'])
+            ->assertOk()
+            ->assertJsonPath('id', $shift->id)
+            ->assertJsonPath('bikeRegistration', null);
+
+        $fresh = $shift->fresh();
+        $this->assertNotNull($fresh->logged_off_at);
+        $this->assertNull($fresh->end_mileage);
+        $this->assertNull($fresh->end_mileage_reason);
+        $this->assertSame('None', $fresh->faults);
+        $this->assertDatabaseCount('mileage_readings', 0);
+    }
+
+    public function test_logoff_of_a_shift_with_a_bike_still_requires_end_mileage_and_bike_location(): void
+    {
+        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['endMileage']);
+
+        $this->assertNull($shift->fresh()->logged_off_at);
+    }
+
+    public function test_a_bike_assigned_later_is_logged_off_with_end_mileage(): void
+    {
+        $bike = $this->bikeInArea('E', ['initial_mileage' => 15234]);
+        $shift = $this->bikelessShift();
+
+        $this->fakeDirectory($this->controllerAndRiderVolunteers());
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/bike", [
+                'bikeId' => $bike->id,
+                'startMileage' => 15234,
+            ])
+            ->assertOk();
+
+        $this->mockVerifiedClaims();
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['endMileage']);
+
+        $this->mockVerifiedClaims();
+        $this->withToken('valid-token')
+            ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 15300])
+            ->assertOk();
+
+        $this->assertSame(15300, $bike->fresh()->currentMileage());
+    }
+
     public function test_logon_returns_503_when_the_directory_is_unavailable(): void
     {
         $bike = Bike::factory()->create();
@@ -588,6 +912,13 @@ class OperationalShiftTest extends TestCase
                 'startMileage' => $bike->currentMileage(),
             ])
             ->assertStatus(503);
+    }
+
+    private function bikelessShift(): OperationalShift
+    {
+        $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
+
+        return OperationalShift::factory()->withoutBike()->create(['rider_id' => $rider->id]);
     }
 
     /**

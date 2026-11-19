@@ -28,8 +28,9 @@ class LogonShiftRequest extends FormRequest
     {
         return [
             'riderId' => ['required', 'integer', 'min:1'],
-            'bikeId' => ['required', 'uuid', 'exists:bikes,id'],
-            'startMileage' => ['required', 'integer', 'min:0'],
+            // A rider can be logged on without a bike; the bike and start mileage then go together.
+            'bikeId' => ['nullable', 'required_with:startMileage', 'uuid', 'exists:bikes,id'],
+            'startMileage' => ['nullable', 'required_with:bikeId', 'integer', 'min:0'],
             'mileageVarianceReason' => ['nullable', 'string', 'max:2000'],
         ];
     }

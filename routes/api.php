@@ -39,6 +39,7 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
 
     Route::middleware('access:manage-shifts')->group(function () {
         Route::post('/shifts/logon', [ShiftController::class, 'logon'])->name('shifts.logon');
+        Route::post('/shifts/{shift}/bike', [ShiftController::class, 'assignBike'])->name('shifts.assign-bike');
         Route::post('/shifts/{shift}/logoff', [ShiftController::class, 'logoff'])->name('shifts.logoff');
     });
 
