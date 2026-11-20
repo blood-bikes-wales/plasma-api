@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'external_id',
     'address',
+    'postcode',
     'latitude',
     'longitude',
 ])]

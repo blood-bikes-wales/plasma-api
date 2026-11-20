@@ -41,6 +41,7 @@ class DeliveryJobResource extends JsonResource
             'collection' => [
                 'placeId' => $collection?->external_id,
                 'address' => $collection?->address,
+                'postcode' => $collection?->postcode,
                 'latitude' => $collection?->latitude,
                 'longitude' => $collection?->longitude,
                 'notes' => $this->collection_notes,
@@ -48,6 +49,7 @@ class DeliveryJobResource extends JsonResource
             'delivery' => [
                 'placeId' => $delivery?->external_id,
                 'address' => $delivery?->address,
+                'postcode' => $delivery?->postcode,
                 'latitude' => $delivery?->latitude,
                 'longitude' => $delivery?->longitude,
                 'notes' => $this->delivery_notes,

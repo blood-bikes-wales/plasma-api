@@ -174,6 +174,97 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('collection.placeId', 'ChIJCollectionPlaceId0001');
     }
 
+    public function test_postcodes_are_stored_on_the_places_and_returned(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['postcode'] = '  CF14 4XW ';
+        $payload['delivery']['postcode'] = 'CF72 8XR';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('collection.postcode', 'CF14 4XW')
+            ->assertJsonPath('delivery.postcode', 'CF72 8XR');
+
+        $this->assertDatabaseHas('places', [
+            'external_id' => 'ChIJCollectionPlaceId0001',
+            'postcode' => 'CF14 4XW',
+        ]);
+        $this->assertDatabaseHas('places', [
+            'external_id' => 'ChIJDeliveryPlaceId0001',
+            'postcode' => 'CF72 8XR',
+        ]);
+    }
+
+    public function test_omitting_postcodes_returns_null_and_still_succeeds(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('collection.postcode', null)
+            ->assertJsonPath('delivery.postcode', null);
+
+        $this->assertDatabaseHas('places', [
+            'external_id' => 'ChIJCollectionPlaceId0001',
+            'postcode' => null,
+        ]);
+    }
+
+    public function test_blank_postcodes_are_stored_as_null(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['postcode'] = '   ';
+        $payload['delivery']['postcode'] = null;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('collection.postcode', null)
+            ->assertJsonPath('delivery.postcode', null);
+    }
+
+    public function test_postcodes_longer_than_10_characters_are_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['postcode'] = str_repeat('A', 11);
+        $payload['delivery']['postcode'] = str_repeat('B', 11);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['collection.postcode', 'delivery.postcode']);
+    }
+
+    public function test_a_later_job_without_a_postcode_keeps_the_postcode_already_stored_for_the_place(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['postcode'] = 'CF14 4XW';
+
+        $this->withToken('valid-token')->postJson('/api/jobs', $payload)->assertCreated();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('collection.postcode', 'CF14 4XW');
+
+        $this->assertSame(1, Place::query()->where('external_id', 'ChIJCollectionPlaceId0001')->count());
+    }
+
     public function test_notes_are_stored_on_the_job_and_not_copied_to_the_next_job_at_the_same_place(): void
     {
         $this->fakeDirectory($this->volunteer('Controller'));

@@ -241,11 +241,13 @@ final class DeliveryJobService
     private function upsertPlace(array $location): Place
     {
         $place = Place::query()->where('external_id', $location['placeId'])->first();
+        $postcode = $location['postcode'] ?? null;
 
         if ($place === null) {
             return Place::query()->create([
                 'external_id' => $location['placeId'],
                 'address' => $location['address'],
+                'postcode' => $postcode,
                 'latitude' => $location['latitude'],
                 'longitude' => $location['longitude'],
             ]);
@@ -255,7 +257,14 @@ final class DeliveryJobService
             'address' => $location['address'],
             'latitude' => $location['latitude'],
             'longitude' => $location['longitude'],
-        ])->save();
+        ]);
+
+        // A client that does not send a postcode (older SPA, or a place Google has none for) must not erase one we already hold.
+        if ($postcode !== null) {
+            $place->postcode = $postcode;
+        }
+
+        $place->save();
 
         return $place;
     }
@@ -289,6 +298,7 @@ final class DeliveryJobService
             [
                 'placeId' => $job->collectionPlace->external_id,
                 'address' => $job->collectionPlace->address,
+                'postcode' => $job->collectionPlace->postcode,
                 'latitude' => $job->collectionPlace->latitude,
                 'longitude' => $job->collectionPlace->longitude,
             ],
@@ -296,6 +306,7 @@ final class DeliveryJobService
             [
                 'placeId' => $job->deliveryPlace->external_id,
                 'address' => $job->deliveryPlace->address,
+                'postcode' => $job->deliveryPlace->postcode,
                 'latitude' => $job->deliveryPlace->latitude,
                 'longitude' => $job->deliveryPlace->longitude,
             ],
