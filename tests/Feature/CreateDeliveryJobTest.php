@@ -7,10 +7,12 @@ use App\Enums\JobStatus;
 use App\Enums\JobType;
 use App\Models\DeliveryJob;
 use App\Models\JobContentType;
+use App\Models\OperationalShift;
 use App\Models\Place;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Concerns\SeedsServiceAreas;
 use Tests\TestCase;
@@ -465,6 +467,78 @@ class CreateDeliveryJobTest extends TestCase
             ->postJson('/api/jobs', [...$this->validPayload(), 'scheduledCollectionAt' => $past->toIso8601String()])
             ->assertCreated()
             ->assertJsonPath('scheduledCollectionAt', $past->utc()->toIso8601String());
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function jobTypeProvider(): array
+    {
+        return [
+            'standard job' => ['standard'],
+            'milk job' => ['milk'],
+        ];
+    }
+
+    #[DataProvider('jobTypeProvider')]
+    public function test_a_future_job_is_created_new_and_unallocated_with_nobody_on_shift(string $type): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->assertSame(0, OperationalShift::query()->count());
+
+        $at = now()->addWeek()->startOfHour();
+        $payload = $type === 'milk' ? $this->milkPayload() : $this->validPayload();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$payload, 'scheduledCollectionAt' => $at->toIso8601String()])
+            ->assertCreated()
+            ->assertJsonPath('status', JobStatus::New->value)
+            ->assertJsonPath('scheduledCollectionAt', $at->utc()->toIso8601String())
+            ->assertJsonPath('allocatedRider', null)
+            ->assertJsonMissingPath('errors')
+            ->assertJsonMissingPath('message');
+
+        $job = DeliveryJob::query()->firstOrFail();
+
+        $this->assertSame(JobStatus::New, $job->status);
+        $this->assertNull($job->operational_shift_id);
+        $this->assertNull($job->allocated_at);
+        $this->assertSame(0, OperationalShift::query()->count());
+    }
+
+    public function test_a_future_job_is_never_allocated_implicitly_and_allocating_needs_an_active_shift(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $id = $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'scheduledCollectionAt' => now()->addWeek()->toIso8601String()])
+            ->assertCreated()
+            ->json('id');
+
+        $loggedOff = OperationalShift::factory()->loggedOff()->create();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$id}/actions/allocate", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['shiftId']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$id}/actions/allocate", ['shiftId' => (string) Str::uuid()])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['shiftId']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$id}/actions/allocate", ['shiftId' => $loggedOff->id])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['shiftId']);
+
+        $job = DeliveryJob::query()->findOrFail($id);
+
+        $this->assertSame(JobStatus::New, $job->status);
+        $this->assertNull($job->operational_shift_id);
     }
 
     public function test_a_blank_or_invalid_schedule_is_treated_as_none_or_rejected(): void
