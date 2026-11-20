@@ -54,16 +54,19 @@ final class ThreeRingsClient
     }
 
     /**
+     * @param  int|null  $timeoutSeconds  For callers on a user-facing request: use this read timeout instead of the
+     *                                    configured one and make a single attempt (no retries), so a slow Three Rings
+     *                                    cannot hold the request.
      * @return Collection<int, Shift>
      */
-    public function shifts(DateTimeInterface $start, DateTimeInterface $end): Collection
+    public function shifts(DateTimeInterface $start, DateTimeInterface $end, ?int $timeoutSeconds = null): Collection
     {
         $query = [
             'start_date' => $start->format('Y-m-d'),
             'end_date' => $end->format('Y-m-d'),
         ];
 
-        $data = $this->get('/shift.json', $query, 'shifts');
+        $data = $this->get('/shift.json', $query, 'shifts', $timeoutSeconds);
 
         return collect($data['shifts'] ?? [])->map(Shift::fromArray(...))->values();
     }
@@ -75,7 +78,7 @@ final class ThreeRingsClient
      * @param  array<string, string>  $query
      * @return array<mixed>
      */
-    private function get(string $path, array $query, string $endpoint): array
+    private function get(string $path, array $query, string $endpoint, ?int $timeoutSeconds = null): array
     {
         $freshKey = $this->cacheKey('fresh', $path, $query);
         $staleKey = $this->cacheKey('stale', $path, $query);
@@ -108,7 +111,7 @@ final class ThreeRingsClient
         }
 
         try {
-            $response = $this->send($path, $query);
+            $response = $this->send($path, $query, $timeoutSeconds);
         } catch (ConnectionException $exception) {
             return $this->staleOrFail($staleKey, $path, $query, $exception);
         } catch (RequestException $exception) {
@@ -136,14 +139,17 @@ final class ThreeRingsClient
     /**
      * @param  array<string, string>  $query
      */
-    private function send(string $path, array $query): Response
+    private function send(string $path, array $query, ?int $timeoutSeconds = null): Response
     {
         $this->logger->info('Three Rings request started.', $this->requestContext($path, $query));
 
         $this->limiter->hit(self::RATE_LIMITER_KEY, $this->config->decaySeconds);
 
-        $response = $this->pending()
-            ->retry(2, 500, function (Throwable $exception) use ($path, $query): bool {
+        $request = $this->pending($timeoutSeconds);
+
+        $request = $timeoutSeconds !== null
+            ? $request->throw()
+            : $request->retry(2, 500, function (Throwable $exception) use ($path, $query): bool {
                 if (! $this->isTransientFailure($exception)) {
                     return false;
                 }
@@ -166,8 +172,9 @@ final class ThreeRingsClient
                 $this->limiter->hit(self::RATE_LIMITER_KEY, $this->config->decaySeconds);
 
                 return true;
-            })
-            ->get($path, $query);
+            });
+
+        $response = $request->get($path, $query);
 
         $this->logger->info('Three Rings request succeeded.', [
             ...$this->requestContext($path, $query),
@@ -177,11 +184,11 @@ final class ThreeRingsClient
         return $response;
     }
 
-    private function pending(): PendingRequest
+    private function pending(?int $timeoutSeconds = null): PendingRequest
     {
         return $this->http
             ->baseUrl($this->config->baseUrl)
-            ->timeout($this->config->timeoutSeconds)
+            ->timeout($timeoutSeconds ?? $this->config->timeoutSeconds)
             ->connectTimeout($this->config->connectTimeoutSeconds)
             ->acceptJson()
             ->withHeaders([

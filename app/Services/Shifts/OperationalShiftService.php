@@ -35,6 +35,7 @@ final class OperationalShiftService
     public function __construct(
         private readonly ThreeRingsClient $threeRings,
         private readonly VolunteerAreaResolver $areas,
+        private readonly ShiftTypeResolver $shiftTypes,
     ) {}
 
     /**
@@ -59,6 +60,10 @@ final class OperationalShiftService
         $volunteer = $this->findVolunteer($riderId);
         $reason = $this->normaliseOptionalText($mileageVarianceReason);
 
+        // Slow external call: do it before the transaction so no row locks are held while waiting.
+        // Never fails the logon; null when unrostered or Three Rings is unavailable.
+        $shiftType = $this->shiftTypes->resolve($volunteer->id, now());
+
         try {
             $shift = DB::transaction(fn (): OperationalShift => $this->createActiveShift(
                 $actor,
@@ -66,6 +71,7 @@ final class OperationalShiftService
                 $bikeId,
                 $startMileage,
                 $reason,
+                $shiftType,
             ));
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages([
@@ -157,6 +163,7 @@ final class OperationalShiftService
         ?string $bikeId,
         ?int $startMileage,
         ?string $reason,
+        ?string $shiftType,
     ): OperationalShift {
         $bike = $bikeId === null ? null : $this->lockBike($bikeId);
         $rider = $this->upsertRider($volunteer);
@@ -174,6 +181,7 @@ final class OperationalShiftService
             'mileage_variance_reason' => $bike === null || $startMileage === null
                 ? null
                 : $this->storedMileageVarianceReason($bike, $startMileage, $reason),
+            'shift_type' => $shiftType,
             'logged_on_at' => now(),
             'logged_on_by_user_id' => $actor->id,
         ]);

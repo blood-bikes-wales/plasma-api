@@ -54,6 +54,14 @@ return [
         'connect_timeout_seconds' => (int) env('THREE_RINGS_CONNECT_TIMEOUT_SECONDS', 5),
 
         /*
+         * Where the shift type shown against a logged-on rider (Milk, Sepsis,
+         * Swansea Bay) comes from on the rider's Three Rings shift: `rota`
+         * (the rota name) or `title` (the shift title). Anything else falls
+         * back to `rota`.
+         */
+        'shift_type_source' => env('THREE_RINGS_SHIFT_TYPE_SOURCE', 'rota'),
+
+        /*
          * Three Rings allows at most 30 requests in any sliding 60-second
          * window. The limiter uses a fixed window, and two fixed windows can
          * straddle a sliding one (up to 2N requests), so 15 per fixed window

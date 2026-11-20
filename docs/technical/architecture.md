@@ -72,6 +72,7 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 - `app/Services/ThreeRings/Data/Volunteer.php` — Parses live directory volunteer records (code-keyed properties, regional role names)
 - `app/Enums/Role.php` — Maps Three Rings role names to Plasma roles (prefix match for regional riders/trustees; exact match for Controller)
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
+- `app/Services/Shifts/ShiftTypeResolver.php` — read-only Three Rings lookup of the rider's shift type at logon
 - `app/Services/Jobs/DeliveryJobService.php` — create, relay, allocate/collect/deliver/cancel; list active and completed top-level jobs
 - `app/Services/Jobs/RelayJobStatusAggregator.php` — derive parent relay status from leg progress
 - `app/Services/Directory/VolunteerDirectoryService.php` — filter cached Three Rings volunteers by name, role, area
@@ -102,7 +103,7 @@ Do not document routes that are not registered.
 | GET | `/api/directory/volunteers` | `auth.google` + any Plasma role (`view-directory`) | Volunteer search; query `q`, `role`, `area` (all optional; empty if all blank) |
 | GET | `/api/directory/bikes` | `auth.google` + any Plasma role (`view-directory`) | Bike search by registration; query `q` (empty if blank) |
 | GET | `/api/directory/bikes/{id}` | `auth.google` + any Plasma role (`view-directory`) | Bike detail with `mileageHistory` |
-| POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …). The bike must be in one of the rider's areas (see `areas` on `/api/volunteers`); otherwise 422 on `bikeId` |
+| POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …, `shiftType`). The bike must be in one of the rider's areas (see `areas` on `/api/volunteers`); otherwise 422 on `bikeId`. `shiftType` (Milk, Sepsis, Swansea Bay…) is looked up from the rider's Three Rings shift at logon, or `null` when unrostered or Three Rings is unavailable (never fails the logon) |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults?, bikeKeptAt? }` (`lockup` default, or `home`) |
 | GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled). `completed` only lists jobs completed in the last 24 hours (the claimed `delivered_at` / `cancelled_at`, or the server-recorded `updated_at`; either being recent is enough) unless the caller's `settings.showCompletedJobs` is true. `active` is never filtered by date (a job scheduled for a later day is listed). Both lists are ordered `updated_at` desc, then `id` desc |
 | GET | `/api/jobs/{id}` | `auth.google` + any Plasma role (`view-jobs`) | One `DeliveryJob` (uuid; a top-level job or a relay leg) shaped like the list items, never age-filtered; 404 for an unknown or malformed id |
@@ -121,7 +122,7 @@ Do not document routes that are not registered.
 | SQLite `:memory:` | PHPUnit |
 | Cache store (`database`) | Three Rings fresh/stale TTLs; shared across Cloud Run instances |
 
-Three Rings cache lifetimes (seconds) live under `config/services.php` → `three_rings.cache` (volunteers/directory, shifts). HTTP timeouts: `THREE_RINGS_TIMEOUT_SECONDS` (default 30), `THREE_RINGS_CONNECT_TIMEOUT_SECONDS` (default 5). Rate budget: 15 attempts / 60s fixed window (comments explain BR-005 GET-only and BR-008 stale fallback).
+Three Rings cache lifetimes (seconds) live under `config/services.php` → `three_rings.cache` (volunteers/directory, shifts). HTTP timeouts: `THREE_RINGS_TIMEOUT_SECONDS` (default 30), `THREE_RINGS_CONNECT_TIMEOUT_SECONDS` (default 5). Shift type shown on a logged-on rider: `THREE_RINGS_SHIFT_TYPE_SOURCE` = `rota` (default, the shift's rota name) or `title` (the shift title); the logon lookup uses a 5s timeout and a single attempt. Rate budget: 15 attempts / 60s fixed window (comments explain BR-005 GET-only and BR-008 stale fallback).
 
 ## Integrations
 
