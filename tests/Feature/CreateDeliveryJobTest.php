@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
+use App\Models\Place;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -171,6 +172,82 @@ class CreateDeliveryJobTest extends TestCase
             ->postJson('/api/jobs', $payload)
             ->assertCreated()
             ->assertJsonPath('collection.placeId', 'ChIJCollectionPlaceId0001');
+    }
+
+    public function test_notes_are_stored_on_the_job_and_not_copied_to_the_next_job_at_the_same_place(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['notes'] = '  path lab  ';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('collection.notes', 'path lab')
+            ->assertJsonPath('delivery.notes', null);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'collection_notes' => 'path lab',
+            'delivery_notes' => null,
+        ]);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('reference', 'JB-0002')
+            ->assertJsonPath('collection.placeId', 'ChIJCollectionPlaceId0001')
+            ->assertJsonPath('collection.notes', null)
+            ->assertJsonPath('delivery.notes', null);
+
+        $this->assertSame(1, Place::query()->where('external_id', 'ChIJCollectionPlaceId0001')->count());
+    }
+
+    public function test_blank_notes_are_stored_as_null(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['notes'] = '   ';
+        $payload['delivery']['notes'] = '';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('collection.notes', null)
+            ->assertJsonPath('delivery.notes', null);
+    }
+
+    public function test_notes_longer_than_500_characters_are_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['collection']['notes'] = str_repeat('a', 501);
+        $payload['delivery']['notes'] = str_repeat('b', 501);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['collection.notes', 'delivery.notes']);
+    }
+
+    public function test_notes_of_exactly_500_characters_are_accepted(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['delivery']['notes'] = str_repeat('b', 500);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('delivery.notes', str_repeat('b', 500));
     }
 
     #[DataProvider('validPhoneProvider')]

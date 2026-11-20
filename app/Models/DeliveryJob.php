@@ -22,6 +22,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'sender_organisation',
     'collection_place_id',
     'delivery_place_id',
+    'collection_notes',
+    'delivery_notes',
     'contents',
     'created_by_user_id',
     'operational_shift_id',
