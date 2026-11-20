@@ -107,6 +107,31 @@ class DirectoryTest extends TestCase
             ->assertJsonPath('data.0.lastRecordedMileage', 15234);
     }
 
+    public function test_the_directory_never_exposes_the_previous_shift_note(): void
+    {
+        $bike = Bike::factory()->create(['registration' => 'CF12 ABC']);
+        OperationalShift::factory()->loggedOff()->create([
+            'bike_id' => $bike->id,
+            'faults' => 'Rear brake feels soft',
+        ]);
+
+        $this->fakeDirectory([$this->riderVolunteer()]);
+        $this->mockVerifiedClaims();
+
+        $search = $this->withToken('valid-token')
+            ->getJson('/api/directory/bikes?q=cf12')
+            ->assertOk()
+            ->assertJsonPath('data.0.registration', 'CF12 ABC');
+        $this->assertArrayNotHasKey('lastShiftNote', $search->json('data.0'));
+        $this->assertArrayNotHasKey('lastShiftNoteAt', $search->json('data.0'));
+
+        $detail = $this->withToken('valid-token')
+            ->getJson("/api/directory/bikes/{$bike->id}")
+            ->assertOk();
+        $this->assertArrayNotHasKey('lastShiftNote', $detail->json());
+        $this->assertArrayNotHasKey('lastShiftNoteAt', $detail->json());
+    }
+
     public function test_bike_detail_includes_append_only_mileage_history(): void
     {
         $bike = Bike::factory()->create([

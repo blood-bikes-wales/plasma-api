@@ -47,7 +47,7 @@ final class BikeLogService
     public function listActive(): EloquentCollection
     {
         return Bike::query()
-            ->with('serviceArea')
+            ->with(['serviceArea', 'latestLoggedOffShift'])
             ->active()
             ->orderBy('registration')
             ->get();
@@ -58,7 +58,7 @@ final class BikeLogService
      */
     public function listManaged(?string $status, ?string $area): EloquentCollection
     {
-        $query = Bike::query()->with('serviceArea')->orderBy('registration');
+        $query = Bike::query()->with(['serviceArea', 'latestLoggedOffShift'])->orderBy('registration');
 
         if ($status === 'retired') {
             $query->retired();

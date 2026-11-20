@@ -34,7 +34,7 @@ final class BikeFleetService
             'user_id' => $actor->id,
         ]);
 
-        return $bike->load('serviceArea');
+        return $bike->load(['serviceArea', 'latestLoggedOffShift']);
     }
 
     /**
@@ -60,7 +60,7 @@ final class BikeFleetService
             'user_id' => $actor->id,
         ]);
 
-        return $bike->load('serviceArea');
+        return $bike->load(['serviceArea', 'latestLoggedOffShift']);
     }
 
     public function retire(User $actor, Bike $bike): Bike
@@ -83,7 +83,7 @@ final class BikeFleetService
             'user_id' => $actor->id,
         ]);
 
-        return $bike->load('serviceArea');
+        return $bike->load(['serviceArea', 'latestLoggedOffShift']);
     }
 
     private function requireServiceAreaId(string $code): string
