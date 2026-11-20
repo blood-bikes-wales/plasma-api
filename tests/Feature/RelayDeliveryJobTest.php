@@ -37,7 +37,11 @@ class RelayDeliveryJobTest extends TestCase
 
     public function test_a_controller_can_convert_a_new_job_into_relay_legs(): void
     {
-        $job = DeliveryJob::factory()->create(['reference' => 'JB-0200']);
+        $job = DeliveryJob::factory()->create([
+            'reference' => 'JB-0200',
+            'collection_notes' => 'path lab',
+            'delivery_notes' => 'reception outside',
+        ]);
 
         $this->fakeDirectory($this->volunteer('Controller'));
         $this->mockVerifiedClaims();
@@ -63,7 +67,11 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.status', JobStatus::New->value)
             ->assertJsonPath('legs.0.legNumber', 1)
             ->assertJsonPath('legs.1.reference', 'JB-0200-L2')
-            ->assertJsonPath('legs.1.legNumber', 2);
+            ->assertJsonPath('legs.1.legNumber', 2)
+            ->assertJsonPath('legs.0.collection.notes', null)
+            ->assertJsonPath('legs.0.delivery.notes', null)
+            ->assertJsonPath('legs.1.collection.notes', null)
+            ->assertJsonPath('legs.1.delivery.notes', null);
 
         $this->assertTrue($job->fresh()->isRelayParent());
         $this->assertSame(3, DeliveryJob::query()->count());

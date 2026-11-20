@@ -47,11 +47,13 @@ class StoreDeliveryJobRequest extends FormRequest
             'collection.address' => ['required', 'string', 'max:500'],
             'collection.latitude' => ['required', 'numeric', 'between:-90,90'],
             'collection.longitude' => ['required', 'numeric', 'between:-180,180'],
+            'collection.notes' => ['nullable', 'string', 'max:500'],
             'delivery' => ['required', 'array'],
             'delivery.placeId' => ['required', 'string', 'max:255'],
             'delivery.address' => ['required', 'string', 'max:500'],
             'delivery.latitude' => ['required', 'numeric', 'between:-90,90'],
             'delivery.longitude' => ['required', 'numeric', 'between:-180,180'],
+            'delivery.notes' => ['nullable', 'string', 'max:500'],
             'contents' => ['required', 'string', 'max:2000'],
             'serviceAreas' => ['required', 'array', 'min:1'],
             'serviceAreas.*' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
@@ -120,6 +122,18 @@ class StoreDeliveryJobRequest extends FormRequest
             'address' => $location['address'] ?? null,
             'latitude' => $location['latitude'] ?? $location['lat'] ?? null,
             'longitude' => $location['longitude'] ?? $location['lng'] ?? $location['lon'] ?? null,
+            'notes' => $this->normaliseNotes($location['notes'] ?? null),
         ];
+    }
+
+    private function normaliseNotes(mixed $notes): mixed
+    {
+        if (! is_string($notes)) {
+            return $notes;
+        }
+
+        $notes = trim($notes);
+
+        return $notes === '' ? null : $notes;
     }
 }

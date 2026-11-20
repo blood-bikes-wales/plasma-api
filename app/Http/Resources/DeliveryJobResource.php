@@ -43,12 +43,14 @@ class DeliveryJobResource extends JsonResource
                 'address' => $collection?->address,
                 'latitude' => $collection?->latitude,
                 'longitude' => $collection?->longitude,
+                'notes' => $this->collection_notes,
             ],
             'delivery' => [
                 'placeId' => $delivery?->external_id,
                 'address' => $delivery?->address,
                 'latitude' => $delivery?->latitude,
                 'longitude' => $delivery?->longitude,
+                'notes' => $this->delivery_notes,
             ],
             'contents' => $this->contents,
             'serviceAreas' => $this->whenLoaded(

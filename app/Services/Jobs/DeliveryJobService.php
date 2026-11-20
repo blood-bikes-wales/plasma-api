@@ -42,6 +42,8 @@ final class DeliveryJobService
                 'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
+                'collection_notes' => $this->normaliseOptionalText($collection['notes'] ?? null),
+                'delivery_notes' => $this->normaliseOptionalText($delivery['notes'] ?? null),
                 'contents' => $payload['contents'],
                 'created_by_user_id' => $actor->id,
             ]);
