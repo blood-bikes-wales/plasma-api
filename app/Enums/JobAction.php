@@ -20,13 +20,16 @@ enum JobAction: string
     }
 
     /**
+     * Allocate stays available on an Allocated job so a mis-tap can be corrected: the rider
+     * can be changed until the job is collected.
+     *
      * @return list<self>
      */
     public static function forStatus(JobStatus $status): array
     {
         return match ($status) {
             JobStatus::New => [self::Allocate, self::Cancel],
-            JobStatus::Allocated => [self::Collect, self::Cancel],
+            JobStatus::Allocated => [self::Allocate, self::Collect, self::Cancel],
             JobStatus::Collected => [self::Deliver, self::Cancel],
             JobStatus::Delivered,
             JobStatus::Cancelled => [],

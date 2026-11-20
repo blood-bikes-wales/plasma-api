@@ -80,7 +80,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonPath('allocatedRider.id', '100001')
             ->assertJsonPath('allocatedRider.name', 'Alex Morgan')
             ->assertJsonPath('allocatedRider.shiftId', $shift->id)
-            ->assertJsonPath('allowedActions', ['collect', 'cancel']);
+            ->assertJsonPath('allowedActions', ['allocate', 'collect', 'cancel']);
 
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$job->id}/actions/collect", [

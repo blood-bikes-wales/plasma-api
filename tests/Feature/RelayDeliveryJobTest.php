@@ -633,7 +633,7 @@ class RelayDeliveryJobTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', JobStatus::Allocated->value)
             ->assertJsonPath('waitingForLeg', 2)
-            ->assertJsonPath('allowedActions', ['cancel']);
+            ->assertJsonPath('allowedActions', ['allocate', 'cancel']);
     }
 
     public function test_the_job_list_exposes_the_blocked_state_of_each_leg(): void
@@ -647,9 +647,9 @@ class RelayDeliveryJobTest extends TestCase
         $response->assertJsonPath('data.0.legs.0.waitingForLeg', null)
             ->assertJsonPath('data.0.legs.0.allowedActions', [])
             ->assertJsonPath('data.0.legs.1.waitingForLeg', null)
-            ->assertJsonPath('data.0.legs.1.allowedActions', ['collect', 'cancel'])
+            ->assertJsonPath('data.0.legs.1.allowedActions', ['allocate', 'collect', 'cancel'])
             ->assertJsonPath('data.0.legs.2.waitingForLeg', 2)
-            ->assertJsonPath('data.0.legs.2.allowedActions', ['cancel'])
+            ->assertJsonPath('data.0.legs.2.allowedActions', ['allocate', 'cancel'])
             ->assertJsonPath('data.0.legs.3.waitingForLeg', 3)
             ->assertJsonPath('data.0.legs.3.allowedActions', ['allocate', 'cancel'])
             ->assertJsonPath('data.0.waitingForLeg', null);
