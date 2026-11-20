@@ -92,7 +92,8 @@ class DeliveryJobResource extends JsonResource
                 'collectedAt' => $this->collected_at?->toIso8601String(),
             ],
             'deliveryRecord' => $this->delivered_at === null ? null : [
-                'recipient' => $this->recipient,
+                'recipient' => $this->no_recipient ? null : $this->recipient,
+                'noRecipient' => $this->no_recipient,
                 'deliveredAt' => $this->delivered_at?->toIso8601String(),
             ],
             'cancellation' => $this->cancelled_at === null ? null : [

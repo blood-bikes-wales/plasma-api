@@ -42,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'receipt_number',
     'collected_at',
     'recipient',
+    'no_recipient',
     'delivered_at',
     'cancellation_reason',
     'cancelled_at',
@@ -61,6 +62,7 @@ class DeliveryJob extends Model
     protected $attributes = [
         'job_type' => 'standard',
         'is_bereavement' => false,
+        'no_recipient' => false,
     ];
 
     /**
@@ -74,6 +76,7 @@ class DeliveryJob extends Model
             'milk_litres' => 'float',
             'is_bereavement' => 'boolean',
             'contents_confirmed' => 'boolean',
+            'no_recipient' => 'boolean',
             'leg_number' => 'integer',
             'estimated_collection_at' => 'datetime',
             'estimated_delivery_at' => 'datetime',
