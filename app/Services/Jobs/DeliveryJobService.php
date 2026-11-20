@@ -196,9 +196,12 @@ final class DeliveryJobService
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Deliver);
 
+            $noRecipient = (bool) ($payload['noRecipient'] ?? false);
+
             $locked->fill([
                 'status' => JobStatus::Delivered,
-                'recipient' => $payload['recipient'],
+                'no_recipient' => $noRecipient,
+                'recipient' => $noRecipient ? null : $payload['recipient'],
                 'delivered_at' => $this->parseTimestamp($payload['deliveredAt'] ?? null) ?? now(),
             ])->save();
 

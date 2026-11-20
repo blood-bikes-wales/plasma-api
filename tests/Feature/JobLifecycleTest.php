@@ -11,6 +11,7 @@ use App\Models\Rider;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class JobLifecycleTest extends TestCase
@@ -202,6 +203,156 @@ class JobLifecycleTest extends TestCase
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$job->id}/actions/relay", [])
             ->assertNotFound();
+    }
+
+    public function test_deliver_with_no_recipient_succeeds_and_stores_null(): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", ['noRecipient' => true])
+            ->assertOk()
+            ->assertJsonPath('status', JobStatus::Delivered->value)
+            ->assertJsonPath('deliveryRecord.recipient', null)
+            ->assertJsonPath('deliveryRecord.noRecipient', true);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'id' => $job->id,
+            'status' => JobStatus::Delivered->value,
+            'recipient' => null,
+            'no_recipient' => true,
+        ]);
+    }
+
+    public function test_deliver_with_no_recipient_ignores_a_recipient_sent_as_well(): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", [
+                'noRecipient' => true,
+                'recipient' => 'Dr Patel',
+            ])
+            ->assertOk()
+            ->assertJsonPath('deliveryRecord.recipient', null)
+            ->assertJsonPath('deliveryRecord.noRecipient', true);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'id' => $job->id,
+            'recipient' => null,
+            'no_recipient' => true,
+        ]);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public static function noRecipientTruthyValues(): array
+    {
+        return ['true' => [true], 'int 1' => [1], 'string 1' => ['1'], 'string true' => ['true']];
+    }
+
+    #[DataProvider('noRecipientTruthyValues')]
+    public function test_deliver_accepts_truthy_no_recipient_values(mixed $value): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", ['noRecipient' => $value])
+            ->assertOk()
+            ->assertJsonPath('deliveryRecord.noRecipient', true)
+            ->assertJsonPath('deliveryRecord.recipient', null);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public static function noRecipientFalsyValues(): array
+    {
+        return ['false' => [false], 'int 0' => [0], 'string 0' => ['0'], 'string false' => ['false'], 'null' => [null], 'empty string' => ['']];
+    }
+
+    #[DataProvider('noRecipientFalsyValues')]
+    public function test_deliver_treats_falsy_no_recipient_values_as_a_normal_delivery(mixed $value): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", [
+                'noRecipient' => $value,
+                'recipient' => 'Dr Patel',
+            ])
+            ->assertOk()
+            ->assertJsonPath('deliveryRecord.noRecipient', false)
+            ->assertJsonPath('deliveryRecord.recipient', 'Dr Patel');
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'id' => $job->id,
+            'recipient' => 'Dr Patel',
+            'no_recipient' => false,
+        ]);
+    }
+
+    public function test_deliver_without_a_recipient_or_the_flag_is_rejected_on_recipient(): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", [])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['recipient']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", ['recipient' => '   ', 'noRecipient' => false])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['recipient']);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'id' => $job->id,
+            'status' => JobStatus::Collected->value,
+        ]);
+    }
+
+    public function test_deliver_rejects_an_unrecognised_no_recipient_value(): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", ['noRecipient' => 'maybe', 'recipient' => 'Dr Patel'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['noRecipient']);
+    }
+
+    public function test_a_legacy_client_without_the_flag_still_delivers_with_a_recipient(): void
+    {
+        $job = DeliveryJob::factory()->collected()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/actions/deliver", ['recipient' => 'Dr Patel'])
+            ->assertOk()
+            ->assertJsonPath('deliveryRecord.recipient', 'Dr Patel')
+            ->assertJsonPath('deliveryRecord.noRecipient', false);
     }
 
     /**
