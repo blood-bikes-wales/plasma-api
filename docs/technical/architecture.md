@@ -94,6 +94,9 @@ Do not document routes that are not registered.
 | POST | `/api/bikes` | `auth.google` + trustee/admin (`manage-bikes`) | Create bike; body `{ registration, area, lastRecordedMileage, purchasedAt? }`; 201 |
 | PATCH | `/api/bikes/{id}` | `auth.google` + trustee/admin (`manage-bikes`) | Update registration, area, purchasedAt |
 | POST | `/api/bikes/{id}/retire` | `auth.google` + trustee/admin (`manage-bikes`) | Retire bike (no hard delete) |
+| GET | `/api/job-contents` | `auth.google` + controller or trustee (`view-job-contents`; admin via hierarchy) | `{ "data": [ { id, name } ] }` — active entries for the New Job contents picker; callers with `manage-job-contents` also get retired entries plus `active` and `sortOrder` |
+| POST | `/api/job-contents` | `auth.google` + trustee/admin (`manage-job-contents`) | Add an entry; body `{ name, sortOrder?, active? }`; names are trimmed and unique ignoring case; 201 |
+| PATCH | `/api/job-contents/{id}` | `auth.google` + trustee/admin (`manage-job-contents`) | Rename, deactivate/reactivate or reorder; body `{ name?, active?, sortOrder? }` (at least one). Jobs keep the text they were created with |
 | GET | `/api/volunteers` | `auth.google` + controller (`view-volunteers`) | `{ "data": [ { id, name, areas } ] }` from Three Rings — rider picker at logon. `areas` is the list of service-area codes the rider covers, taken from their `Rider - <area>` roles via `service_areas.three_rings_role` (empty when the rider has no area role) |
 | GET | `/api/directory/volunteers` | `auth.google` + any Plasma role (`view-directory`) | Volunteer search; query `q`, `role`, `area` (all optional; empty if all blank) |
 | GET | `/api/directory/bikes` | `auth.google` + any Plasma role (`view-directory`) | Bike search by registration; query `q` (empty if blank) |
@@ -101,7 +104,7 @@ Do not document routes that are not registered.
 | POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …). The bike must be in one of the rider's areas (see `areas` on `/api/volunteers`); otherwise 422 on `bikeId` |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults?, bikeKeptAt? }` (`lockup` default, or `home`) |
 | GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled) |
-| POST | `/api/jobs` | `auth.google` + controller (`create-job`) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`); 201 |
+| POST | `/api/jobs` | `auth.google` + controller (`create-job`) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`); 201. `contents` must be the name of an active `/api/job-contents` entry (422 otherwise) |
 | POST | `/api/jobs/{id}/relay` | `auth.google` + controller (`create-job`) | Convert a New job to relay; body `{ rendezvousPoints: [ Places location, … ] }`; creates legs `{reference}-L{n}` |
 | POST | `/api/jobs/{id}/actions/allocate` | `auth.google` + controller (`create-job`) | New → Allocated; body `{ shiftId }` (active operational shift) |
 | POST | `/api/jobs/{id}/actions/collect` | `auth.google` + controller (`create-job`) | Allocated → Collected; body `{ contentsConfirmed, receiptNumber, collectedAt? }` |

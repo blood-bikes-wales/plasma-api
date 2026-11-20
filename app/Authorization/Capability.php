@@ -19,4 +19,6 @@ enum Capability: string
     case ManageBikes = 'manage-bikes';
     case ViewPostcodeAreas = 'view-postcode-areas';
     case ManagePostcodeAreas = 'manage-postcode-areas';
+    case ViewJobContents = 'view-job-contents';
+    case ManageJobContents = 'manage-job-contents';
 }
