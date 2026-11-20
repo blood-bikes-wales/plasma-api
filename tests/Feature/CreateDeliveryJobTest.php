@@ -6,6 +6,7 @@ use App\Contracts\GoogleIdTokenVerifier;
 use App\Enums\JobStatus;
 use App\Enums\JobType;
 use App\Models\DeliveryJob;
+use App\Models\JobContentType;
 use App\Models\Place;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -37,6 +38,11 @@ class CreateDeliveryJobTest extends TestCase
 
         Http::preventStrayRequests();
         $this->seedServiceAreas();
+
+        JobContentType::query()->firstOrCreate(
+            ['name' => 'Blood samples'],
+            ['active' => true, 'sort_order' => 1],
+        );
     }
 
     public function test_unauthenticated_requests_are_denied(): void
@@ -85,6 +91,69 @@ class CreateDeliveryJobTest extends TestCase
             'sender_name' => 'Dr Patel',
         ]);
         $this->assertSame(1, DeliveryJob::query()->count());
+    }
+
+    public function test_contents_must_be_an_active_list_entry(): void
+    {
+        JobContentType::factory()->inactive()->create(['name' => 'Retired thing']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        foreach (['Free text the old form allowed', 'Retired thing', 'blood samples'] as $contents) {
+            $this->withToken('valid-token')
+                ->postJson('/api/jobs', [...$this->validPayload(), 'contents' => $contents])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors(['contents']);
+        }
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', array_diff_key($this->validPayload(), ['contents' => true]))
+            ->assertUnprocessable()
+            ->assertJsonPath('errors.contents.0', 'Choose the contents.');
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_deactivated_or_renamed_entry_does_not_change_existing_jobs_or_relay_legs(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $jobId = $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->json('id');
+
+        JobContentType::query()->where('name', 'Blood samples')->update(['active' => false]);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['contents']);
+
+        // The old job still shows the text it was created with, and relaying it still copies it to the legs.
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.contents', 'Blood samples');
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$jobId}/relay", [
+                'rendezvousPoints' => [[
+                    'placeId' => 'ChIJRendezvous0001',
+                    'address' => 'Services, Pont Abraham SA4 0FU',
+                    'latitude' => 51.76,
+                    'longitude' => -4.09,
+                    'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                ]],
+            ])
+            ->assertOk();
+
+        $this->assertSame(
+            ['Blood samples', 'Blood samples', 'Blood samples'],
+            DeliveryJob::query()->pluck('contents')->all(),
+        );
     }
 
     public function test_an_admin_can_create_a_job_without_a_controller_role(): void

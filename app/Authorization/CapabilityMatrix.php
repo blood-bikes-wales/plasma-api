@@ -30,7 +30,8 @@ final class CapabilityMatrix
             Capability::CreateJob => [
                 Role::Controller,
             ],
-            Capability::ViewBikes => [
+            Capability::ViewBikes,
+            Capability::ViewJobContents => [
                 Role::Controller,
                 Role::Trustee,
             ],
@@ -41,7 +42,8 @@ final class CapabilityMatrix
                 Role::Controller,
                 Role::Trustee,
             ],
-            Capability::ManagePostcodeAreas => [
+            Capability::ManagePostcodeAreas,
+            Capability::ManageJobContents => [
                 Role::Trustee,
             ],
         };

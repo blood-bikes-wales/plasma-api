@@ -87,7 +87,13 @@ class StoreDeliveryJobRequest extends FormRequest
             'delivery.latitude' => ['required', 'numeric', 'between:-90,90'],
             'delivery.longitude' => ['required', 'numeric', 'between:-180,180'],
             'delivery.notes' => ['nullable', 'string', 'max:500'],
-            'contents' => ['required', 'string', 'max:2000'],
+            // The chosen name is stored as text on the job, so later renames or retirements of the entry do not touch it.
+            'contents' => [
+                'required',
+                'string',
+                'max:2000',
+                Rule::exists('job_content_types', 'name')->where('active', true),
+            ],
             'serviceAreas' => ['required', 'array', 'min:1'],
             'serviceAreas.*' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
             'estimatedCollectionAt' => ['nullable', 'date'],
@@ -101,6 +107,8 @@ class StoreDeliveryJobRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'contents.required' => 'Choose the contents.',
+            'contents.exists' => 'Choose the contents from the list.',
             'milkLitres.required' => 'Enter how many litres of milk are being collected.',
             'milkLitres.prohibited' => 'Litres can only be recorded for milk jobs.',
             'milkLitres.gt' => 'Litres must be greater than 0.',

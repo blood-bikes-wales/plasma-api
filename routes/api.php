@@ -3,6 +3,7 @@
 use App\Enums\JobScope;
 use App\Http\Controllers\Api\BikeController;
 use App\Http\Controllers\Api\DirectoryController;
+use App\Http\Controllers\Api\JobContentTypeController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\PostcodeAreaController;
@@ -86,5 +87,17 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
             ->name('postcode-areas.update');
         Route::post('/postcode-areas/import', [PostcodeAreaController::class, 'import'])
             ->name('postcode-areas.import');
+    });
+
+    Route::middleware('access:view-job-contents')->group(function () {
+        Route::get('/job-contents', [JobContentTypeController::class, 'index'])
+            ->name('job-contents.index');
+    });
+
+    Route::middleware('access:manage-job-contents')->group(function () {
+        Route::post('/job-contents', [JobContentTypeController::class, 'store'])
+            ->name('job-contents.store');
+        Route::patch('/job-contents/{jobContent}', [JobContentTypeController::class, 'update'])
+            ->name('job-contents.update');
     });
 });
