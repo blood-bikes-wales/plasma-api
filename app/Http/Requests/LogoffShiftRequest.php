@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Enums\BikeKeptAt;
+use App\Models\OperationalShift;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,10 +30,20 @@ class LogoffShiftRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'endMileage' => ['required', 'integer', 'min:0'],
+            'endMileage' => [Rule::requiredIf($this->shiftHasBike(...)), 'nullable', 'integer', 'min:0'],
             'faults' => ['nullable', 'string', 'max:2000'],
-            'bikeKeptAt' => ['required', Rule::enum(BikeKeptAt::class)],
+            'bikeKeptAt' => [Rule::requiredIf($this->shiftHasBike(...)), 'nullable', Rule::enum(BikeKeptAt::class)],
             'mileageExplanation' => ['nullable', 'string', 'max:2000'],
         ];
+    }
+
+    /**
+     * A shift logged on without a bike has no mileage or bike location to report.
+     */
+    private function shiftHasBike(): bool
+    {
+        $shift = $this->route('shift');
+
+        return ! ($shift instanceof OperationalShift) || $shift->bike_id !== null;
     }
 }

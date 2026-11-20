@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\BikeKeptAt;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\AssignShiftBikeRequest;
 use App\Http\Requests\LogoffShiftRequest;
 use App\Http\Requests\LogonShiftRequest;
 use App\Http\Resources\ActiveShiftResource;
@@ -30,14 +31,30 @@ class ShiftController extends Controller
         $shift = $this->shifts->logon(
             actor: $user,
             riderId: (int) $request->validated('riderId'),
-            bikeId: (string) $request->validated('bikeId'),
-            startMileage: (int) $request->validated('startMileage'),
+            bikeId: $request->validated('bikeId'),
+            startMileage: $request->validated('startMileage') === null ? null : (int) $request->validated('startMileage'),
             mileageVarianceReason: $request->validated('mileageVarianceReason'),
         );
 
         return (new ActiveShiftResource($shift))
             ->response()
             ->setStatusCode(201);
+    }
+
+    public function assignBike(AssignShiftBikeRequest $request, OperationalShift $shift): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $shift = $this->shifts->assignBike(
+            actor: $user,
+            shift: $shift,
+            bikeId: (string) $request->validated('bikeId'),
+            startMileage: (int) $request->validated('startMileage'),
+            mileageVarianceReason: $request->validated('mileageVarianceReason'),
+        );
+
+        return (new ActiveShiftResource($shift))->response();
     }
 
     public function logoff(LogoffShiftRequest $request, OperationalShift $shift): JsonResponse
@@ -48,9 +65,9 @@ class ShiftController extends Controller
         $shift = $this->shifts->logoff(
             actor: $user,
             shift: $shift,
-            endMileage: (int) $request->validated('endMileage'),
+            endMileage: $request->validated('endMileage') === null ? null : (int) $request->validated('endMileage'),
             faults: $request->validated('faults'),
-            bikeKeptAt: BikeKeptAt::from($request->validated('bikeKeptAt')),
+            bikeKeptAt: $request->validated('bikeKeptAt') === null ? null : BikeKeptAt::from($request->validated('bikeKeptAt')),
             mileageExplanation: $request->validated('mileageExplanation'),
         );
 

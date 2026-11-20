@@ -52,8 +52,8 @@ final class OperationalShiftService
     public function logon(
         User $actor,
         int $riderId,
-        string $bikeId,
-        int $startMileage,
+        ?string $bikeId,
+        ?int $startMileage,
         ?string $mileageVarianceReason,
     ): OperationalShift {
         $volunteer = $this->findVolunteer($riderId);
@@ -83,12 +83,50 @@ final class OperationalShiftService
         return $shift;
     }
 
+    /**
+     * Attach a bike to an active shift that was logged on without one.
+     * Does not change when the rider logged on.
+     */
+    public function assignBike(
+        User $actor,
+        OperationalShift $shift,
+        string $bikeId,
+        int $startMileage,
+        ?string $mileageVarianceReason,
+    ): OperationalShift {
+        $volunteer = $this->findVolunteer((int) $shift->loadMissing('rider')->rider->external_id);
+        $reason = $this->normaliseOptionalText($mileageVarianceReason);
+
+        try {
+            $shift = DB::transaction(fn (): OperationalShift => $this->attachBike(
+                $shift,
+                $volunteer,
+                $bikeId,
+                $startMileage,
+                $reason,
+            ));
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages([
+                'bikeId' => ['This bike already has an active shift.'],
+            ]);
+        }
+
+        Log::info('Bike assigned to an operational shift.', [
+            'shift_id' => $shift->id,
+            'rider_id' => $shift->rider_id,
+            'bike_id' => $shift->bike_id,
+            'user_id' => $actor->id,
+        ]);
+
+        return $shift;
+    }
+
     public function logoff(
         User $actor,
         OperationalShift $shift,
-        int $endMileage,
+        ?int $endMileage,
         ?string $faults,
-        BikeKeptAt $bikeKeptAt = BikeKeptAt::Lockup,
+        ?BikeKeptAt $bikeKeptAt = null,
         ?string $mileageExplanation = null,
     ): OperationalShift {
         $faults = $this->normaliseOptionalText($faults);
@@ -116,23 +154,26 @@ final class OperationalShiftService
     private function createActiveShift(
         User $actor,
         Volunteer $volunteer,
-        string $bikeId,
-        int $startMileage,
+        ?string $bikeId,
+        ?int $startMileage,
         ?string $reason,
     ): OperationalShift {
-        $bike = $this->lockBike($bikeId);
+        $bike = $bikeId === null ? null : $this->lockBike($bikeId);
         $rider = $this->upsertRider($volunteer);
 
         $this->assertNoActiveShiftForRider($rider->id);
-        $this->assertNoActiveShiftForBike($bike->id);
-        $this->assertBikeInRiderArea($bike, $volunteer);
-        $this->assertMileageVarianceReason($bike, $startMileage, $reason);
+
+        if ($bike !== null && $startMileage !== null) {
+            $this->assertBikeCanBeUsed($bike, $volunteer, $startMileage, $reason);
+        }
 
         $shift = OperationalShift::query()->create([
             'rider_id' => $rider->id,
-            'bike_id' => $bike->id,
-            'start_mileage' => $startMileage,
-            'mileage_variance_reason' => $this->storedMileageVarianceReason($bike, $startMileage, $reason),
+            'bike_id' => $bike?->id,
+            'start_mileage' => $bike === null ? null : $startMileage,
+            'mileage_variance_reason' => $bike === null || $startMileage === null
+                ? null
+                : $this->storedMileageVarianceReason($bike, $startMileage, $reason),
             'logged_on_at' => now(),
             'logged_on_by_user_id' => $actor->id,
         ]);
@@ -143,18 +184,76 @@ final class OperationalShiftService
         return $shift;
     }
 
+    private function attachBike(
+        OperationalShift $shift,
+        Volunteer $volunteer,
+        string $bikeId,
+        int $startMileage,
+        ?string $reason,
+    ): OperationalShift {
+        $locked = $this->lockActiveShift($shift->id);
+
+        if ($locked->bike_id !== null) {
+            throw ValidationException::withMessages([
+                'shift' => ['This shift already has a bike.'],
+            ]);
+        }
+
+        $bike = $this->lockBike($bikeId);
+
+        $this->assertBikeCanBeUsed($bike, $volunteer, $startMileage, $reason);
+
+        $locked->fill([
+            'bike_id' => $bike->id,
+            'start_mileage' => $startMileage,
+            'mileage_variance_reason' => $this->storedMileageVarianceReason($bike, $startMileage, $reason),
+        ])->save();
+
+        $locked->setRelation('bike', $bike);
+
+        return $locked;
+    }
+
+    /**
+     * The checks shared by logging on with a bike and assigning one later.
+     */
+    private function assertBikeCanBeUsed(Bike $bike, Volunteer $volunteer, int $startMileage, ?string $reason): void
+    {
+        $this->assertNoActiveShiftForBike($bike->id);
+        $this->assertBikeInRiderArea($bike, $volunteer);
+        $this->assertMileageVarianceReason($bike, $startMileage, $reason);
+    }
+
     private function completeShift(
         User $actor,
         OperationalShift $shift,
-        int $endMileage,
+        ?int $endMileage,
         ?string $faults,
-        BikeKeptAt $bikeKeptAt,
+        ?BikeKeptAt $bikeKeptAt,
         ?string $mileageExplanation,
     ): OperationalShift {
         $locked = $this->lockActiveShift($shift->id);
         $loggedOffAt = now();
 
         $this->assertLogoffIsAfterLogon($locked, $loggedOffAt);
+
+        if ($locked->bike_id === null) {
+            // Never had a bike: there is no mileage, bike location or reading to record.
+            $locked->fill([
+                'logged_off_at' => $loggedOffAt,
+                'faults' => $faults,
+                'logged_off_by_user_id' => $actor->id,
+            ])->save();
+
+            return $locked;
+        }
+
+        if ($endMileage === null) {
+            throw ValidationException::withMessages([
+                'endMileage' => ['Enter the end mileage.'],
+            ]);
+        }
+
         $this->assertEndMileageNotBelowStart($locked, $endMileage);
         $this->assertMileageExplanationGiven($locked, $endMileage, $mileageExplanation);
 
@@ -162,7 +261,7 @@ final class OperationalShiftService
             'logged_off_at' => $loggedOffAt,
             'end_mileage' => $endMileage,
             'faults' => $faults,
-            'bike_kept_at' => $bikeKeptAt,
+            'bike_kept_at' => $bikeKeptAt ?? BikeKeptAt::Lockup,
             'end_mileage_reason' => $this->isSillyMileageChange($locked, $endMileage) ? $mileageExplanation : null,
             'logged_off_by_user_id' => $actor->id,
         ])->save();

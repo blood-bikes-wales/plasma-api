@@ -39,6 +39,17 @@ class OperationalShiftFactory extends Factory
     }
 
     /**
+     * Indicate that the rider was logged on before a bike was chosen.
+     */
+    public function withoutBike(): static
+    {
+        return $this->state(fn (): array => [
+            'bike_id' => null,
+            'start_mileage' => null,
+        ]);
+    }
+
+    /**
      * Indicate that the shift has already been logged off.
      */
     public function loggedOff(): static
