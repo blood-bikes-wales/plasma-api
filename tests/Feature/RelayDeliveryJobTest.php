@@ -132,6 +132,69 @@ class RelayDeliveryJobTest extends TestCase
         $this->assertNull($job->fresh()->planned_arrival_at);
     }
 
+    public function test_relay_legs_carry_postcodes_from_the_job_and_the_rendezvous_points(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0220']);
+        $job->collectionPlace->update(['postcode' => 'CF14 4XW']);
+        $job->deliveryPlace->update(['postcode' => 'CF72 8XR']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0020',
+                        'address' => 'First handoff',
+                        'postcode' => ' CF83 1AA ',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                    [
+                        'placeId' => 'ChIJRendezvous0021',
+                        'address' => 'Second handoff',
+                        'latitude' => 51.60,
+                        'longitude' => -3.20,
+                        'arrivesAt' => '2026-11-20T11:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonCount(3, 'legs')
+            ->assertJsonPath('legs.0.collection.postcode', 'CF14 4XW')
+            ->assertJsonPath('legs.0.delivery.postcode', 'CF83 1AA')
+            ->assertJsonPath('legs.1.collection.postcode', 'CF83 1AA')
+            ->assertJsonPath('legs.1.delivery.postcode', null)
+            ->assertJsonPath('legs.2.collection.postcode', null)
+            ->assertJsonPath('legs.2.delivery.postcode', 'CF72 8XR');
+    }
+
+    public function test_a_rendezvous_postcode_longer_than_10_characters_is_rejected(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0221']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0022',
+                        'address' => 'First handoff',
+                        'postcode' => str_repeat('A', 11),
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['rendezvousPoints.0.postcode']);
+    }
+
     public function test_every_rendezvous_point_must_include_a_valid_arrival_time(): void
     {
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0211']);

@@ -47,12 +47,14 @@ class StoreDeliveryJobRequest extends FormRequest
             'collection' => ['required', 'array'],
             'collection.placeId' => ['required', 'string', 'max:255'],
             'collection.address' => ['required', 'string', 'max:500'],
+            'collection.postcode' => ['nullable', 'string', 'max:10'],
             'collection.latitude' => ['required', 'numeric', 'between:-90,90'],
             'collection.longitude' => ['required', 'numeric', 'between:-180,180'],
             'collection.notes' => ['nullable', 'string', 'max:500'],
             'delivery' => ['required', 'array'],
             'delivery.placeId' => ['required', 'string', 'max:255'],
             'delivery.address' => ['required', 'string', 'max:500'],
+            'delivery.postcode' => ['nullable', 'string', 'max:10'],
             'delivery.latitude' => ['required', 'numeric', 'between:-90,90'],
             'delivery.longitude' => ['required', 'numeric', 'between:-180,180'],
             'delivery.notes' => ['nullable', 'string', 'max:500'],
@@ -124,10 +126,22 @@ class StoreDeliveryJobRequest extends FormRequest
         return [
             'placeId' => $location['placeId'] ?? $location['place_id'] ?? null,
             'address' => $location['address'] ?? null,
+            'postcode' => $this->normalisePostcode($location['postcode'] ?? null),
             'latitude' => $location['latitude'] ?? $location['lat'] ?? null,
             'longitude' => $location['longitude'] ?? $location['lng'] ?? $location['lon'] ?? null,
             'notes' => $this->normaliseNotes($location['notes'] ?? null),
         ];
+    }
+
+    private function normalisePostcode(mixed $postcode): mixed
+    {
+        if (! is_string($postcode)) {
+            return $postcode;
+        }
+
+        $postcode = trim($postcode);
+
+        return $postcode === '' ? null : $postcode;
     }
 
     private function normaliseNotes(mixed $notes): mixed

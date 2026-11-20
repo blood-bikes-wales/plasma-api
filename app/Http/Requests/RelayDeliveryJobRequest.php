@@ -35,6 +35,7 @@ class RelayDeliveryJobRequest extends FormRequest
             'rendezvousPoints' => ['required', 'array', 'min:1'],
             'rendezvousPoints.*.placeId' => ['required', 'string', 'max:255'],
             'rendezvousPoints.*.address' => ['required', 'string', 'max:500'],
+            'rendezvousPoints.*.postcode' => ['nullable', 'string', 'max:10'],
             'rendezvousPoints.*.latitude' => ['required', 'numeric', 'between:-90,90'],
             'rendezvousPoints.*.longitude' => ['required', 'numeric', 'between:-180,180'],
             'rendezvousPoints.*.arrivesAt' => ['required', 'date'],
@@ -58,6 +59,17 @@ class RelayDeliveryJobRequest extends FormRequest
         ];
     }
 
+    private function normalisePostcode(mixed $postcode): mixed
+    {
+        if (! is_string($postcode)) {
+            return $postcode;
+        }
+
+        $postcode = trim($postcode);
+
+        return $postcode === '' ? null : $postcode;
+    }
+
     /**
      * @param  array<string, mixed>  $location
      * @return array<string, mixed>
@@ -67,6 +79,7 @@ class RelayDeliveryJobRequest extends FormRequest
         return [
             'placeId' => $location['placeId'] ?? $location['place_id'] ?? null,
             'address' => $location['address'] ?? null,
+            'postcode' => $this->normalisePostcode($location['postcode'] ?? null),
             'latitude' => $location['latitude'] ?? $location['lat'] ?? null,
             'longitude' => $location['longitude'] ?? $location['lng'] ?? $location['lon'] ?? null,
             'arrivesAt' => $location['arrivesAt'] ?? $location['arrives_at'] ?? null,
