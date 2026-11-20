@@ -151,6 +151,11 @@ class DeliveryJob extends Model
 
     public function isRelayParent(): bool
     {
+        // A leg is never itself a relay (legs cannot be converted again), so skip the per-leg `exists()` query.
+        if ($this->parent_job_id !== null) {
+            return false;
+        }
+
         if ($this->relationLoaded('legs')) {
             return $this->legs->isNotEmpty();
         }
@@ -161,6 +166,63 @@ class DeliveryJob extends Model
     public function isRelayLeg(): bool
     {
         return $this->parent_job_id !== null;
+    }
+
+    /**
+     * Hands each loaded leg its parent, whose `legs` are the sibling set, so asking a leg about the
+     * previous leg (see waitingForLeg()) costs no further query. Call after `legs` is loaded.
+     */
+    public function linkLegsToParent(): static
+    {
+        if ($this->relationLoaded('legs')) {
+            foreach ($this->legs as $leg) {
+                $leg->setRelation('parentJob', $this);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * The leg that precedes this one on the relay: the sibling with the highest leg_number below
+     * this leg's. Legs are numbered 1..n without gaps, so that is leg_number - 1; matching on the
+     * number (not on collection order) keeps it correct however the siblings were loaded.
+     * Reads `parentJob.legs`, which callers should have eager loaded.
+     */
+    public function previousLeg(): ?self
+    {
+        if ($this->parent_job_id === null || $this->leg_number === null || $this->leg_number <= 1) {
+            return null;
+        }
+
+        $siblings = $this->parentJob?->legs;
+        if ($siblings === null) {
+            return null;
+        }
+
+        return $siblings
+            ->filter(fn (self $sibling): bool => $sibling->leg_number !== null && $sibling->leg_number < $this->leg_number)
+            ->sortByDesc('leg_number')
+            ->first();
+    }
+
+    /**
+     * The number of the earlier leg that must be delivered before this leg can be collected or
+     * delivered, or null when nothing is holding it back. A previous leg that is Cancelled keeps
+     * this leg blocked: the relay is cancelled as a whole through the parent.
+     */
+    public function waitingForLeg(): ?int
+    {
+        if (! in_array($this->status, [JobStatus::New, JobStatus::Allocated, JobStatus::Collected], true)) {
+            return null;
+        }
+
+        $previous = $this->previousLeg();
+        if ($previous === null || $previous->status === JobStatus::Delivered) {
+            return null;
+        }
+
+        return $previous->leg_number;
     }
 
     /**
@@ -180,6 +242,14 @@ class DeliveryJob extends Model
             static fn (JobAction $action): string => $action->value,
             JobAction::forStatus($this->status),
         );
+
+        if ($this->waitingForLeg() !== null) {
+            // Allocate stays available so riders can be lined up ahead of the leg before.
+            $actions = array_values(array_filter(
+                $actions,
+                static fn (string $action): bool => $action !== JobAction::Collect->value && $action !== JobAction::Deliver->value,
+            ));
+        }
 
         if ($this->parent_job_id === null && $this->status === JobStatus::New) {
             $actions[] = 'relay';
