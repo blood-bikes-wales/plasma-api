@@ -30,6 +30,7 @@ class ActiveShiftResource extends JsonResource
             'startMileage' => $this->start_mileage,
             'startedAt' => $this->logged_on_at?->toIso8601String(),
             'mileageVarianceReason' => $this->mileage_variance_reason,
+            'shiftType' => $this->shift_type,
         ];
     }
 }

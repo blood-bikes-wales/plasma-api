@@ -112,6 +112,7 @@ class RoleAuthorizationTest extends TestCase
 
         Http::fake([
             'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => $list]),
+            'www.3r.org.uk/shift.json*' => Http::response(['shifts' => []]),
         ]);
     }
 

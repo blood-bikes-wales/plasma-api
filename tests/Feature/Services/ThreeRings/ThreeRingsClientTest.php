@@ -111,6 +111,46 @@ class ThreeRingsClientTest extends TestCase
         $this->assertSame(['Alex Morgan', 'Bethan Hughes'], $shifts[0]->volunteerNames);
     }
 
+    public function test_a_bounded_shifts_lookup_applies_its_timeout_and_makes_a_single_attempt(): void
+    {
+        $options = [];
+        Http::fake(function (Request $request, array $requestOptions) use (&$options) {
+            $options[] = $requestOptions;
+
+            return Http::response('unavailable', 503);
+        });
+
+        try {
+            $this->client()->shifts(CarbonImmutable::parse('2026-07-24'), CarbonImmutable::parse('2026-07-25'), 5);
+            $this->fail('Expected the lookup to fail.');
+        } catch (ThreeRingsUnavailableException) {
+            // Expected: no stale cache to fall back on.
+        }
+
+        $this->assertCount(1, $options);
+        $this->assertEquals(5, $options[0]['timeout']);
+        $this->assertEquals(5, $options[0]['connect_timeout']);
+    }
+
+    public function test_an_unbounded_shifts_lookup_uses_the_configured_timeout_and_retries(): void
+    {
+        $options = [];
+        Http::fake(function (Request $request, array $requestOptions) use (&$options) {
+            $options[] = $requestOptions;
+
+            return Http::response('unavailable', 503);
+        });
+
+        $this->expectException(ThreeRingsUnavailableException::class);
+
+        try {
+            $this->client()->shifts(CarbonImmutable::parse('2026-07-24'), CarbonImmutable::parse('2026-07-25'));
+        } finally {
+            $this->assertCount(2, $options);
+            $this->assertEquals(30, $options[0]['timeout']);
+        }
+    }
+
     public function test_second_call_is_served_from_cache(): void
     {
         $this->fakeThreeRings();

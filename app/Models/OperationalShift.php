@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'bike_id',
     'start_mileage',
     'mileage_variance_reason',
+    'shift_type',
     'logged_on_at',
     'logged_on_by_user_id',
     'logged_off_at',
