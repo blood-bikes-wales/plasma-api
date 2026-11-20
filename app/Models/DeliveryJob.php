@@ -34,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'estimated_collection_at',
     'estimated_delivery_at',
     'planned_arrival_at',
+    'scheduled_collection_at',
     'contents',
     'created_by_user_id',
     'operational_shift_id',
@@ -81,6 +82,7 @@ class DeliveryJob extends Model
             'estimated_collection_at' => 'datetime',
             'estimated_delivery_at' => 'datetime',
             'planned_arrival_at' => 'datetime',
+            'scheduled_collection_at' => 'datetime',
             'allocated_at' => 'datetime',
             'collected_at' => 'datetime',
             'delivered_at' => 'datetime',
@@ -161,6 +163,19 @@ class DeliveryJob extends Model
         }
 
         return $this->legs()->exists();
+    }
+
+    /**
+     * Whether the controller still has to phone the mother to arrange the collection: a milk job
+     * that has not been picked up by anyone yet and has no scheduled time. A relay leg never asks;
+     * the relay's top-level job does. Reads attributes only, so it costs no query per row.
+     */
+    public function needsMotherContact(): bool
+    {
+        return $this->parent_job_id === null
+            && $this->job_type === JobType::Milk
+            && $this->status === JobStatus::New
+            && $this->scheduled_collection_at === null;
     }
 
     public function isRelayLeg(): bool

@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use App\Enums\JobType;
 use App\Rules\ActiveServiceAreaCode;
+use App\Rules\FutureMilkCollection;
 use App\Rules\UkPhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -36,6 +37,7 @@ class StoreDeliveryJobRequest extends FormRequest
             'serviceAreas' => $serviceAreas,
             'estimatedCollectionAt' => $this->normaliseEstimate($this->input('estimatedCollectionAt')),
             'estimatedDeliveryAt' => $this->normaliseEstimate($this->input('estimatedDeliveryAt')),
+            'scheduledCollectionAt' => $this->normaliseEstimate($this->input('scheduledCollectionAt')),
         ]);
     }
 
@@ -98,6 +100,13 @@ class StoreDeliveryJobRequest extends FormRequest
             'serviceAreas.*' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
             'estimatedCollectionAt' => ['nullable', 'date'],
             'estimatedDeliveryAt' => ['nullable', 'date'],
+            // Optional: no value means "today". A milk collection must be arranged for the future; any other job may carry any time.
+            'scheduledCollectionAt' => [
+                'nullable',
+                'string',
+                'date',
+                ...($jobType === JobType::Milk->value ? [new FutureMilkCollection] : []),
+            ],
         ];
     }
 
@@ -116,6 +125,7 @@ class StoreDeliveryJobRequest extends FormRequest
             'milkLitres.decimal' => 'Litres can have at most 2 decimal places.',
             'isBereavement.declined' => 'Bereavement can only be recorded for milk jobs.',
             'mother.prohibited' => "A mother's contact can only be recorded for milk jobs.",
+            'scheduledCollectionAt.date' => 'Enter a valid collection date and time.',
             'mother.name.required' => "Enter the mother's name.",
             'mother.phone.required' => "Enter the mother's phone number.",
             'collection.placeId.required' => 'Collection location must include a Google Place ID.',

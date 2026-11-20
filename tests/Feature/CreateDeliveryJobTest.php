@@ -402,6 +402,87 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('mother.name', 'Megan Evans');
     }
 
+    public function test_a_milk_job_created_without_a_schedule_needs_the_mother_to_be_called(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->milkPayload())
+            ->assertCreated()
+            ->assertJsonPath('needsMotherContact', true)
+            ->assertJsonPath('scheduledCollectionAt', null);
+
+        $this->assertDatabaseHas('delivery_jobs', ['scheduled_collection_at' => null]);
+    }
+
+    public function test_a_milk_job_can_be_created_already_scheduled_and_the_offset_is_normalised_to_utc(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $at = now()->addDays(5)->startOfHour()->setTimezone('Europe/Paris');
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'scheduledCollectionAt' => $at->toIso8601String()])
+            ->assertCreated()
+            ->assertJsonPath('needsMotherContact', false)
+            ->assertJsonPath('scheduledCollectionAt', $at->utc()->toIso8601String());
+
+        $this->assertSame(
+            $at->utc()->format('Y-m-d H:i:s'),
+            DeliveryJob::query()->firstOrFail()->scheduled_collection_at->format('Y-m-d H:i:s'),
+        );
+    }
+
+    public function test_a_milk_job_cannot_be_created_with_a_time_that_has_passed(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'scheduledCollectionAt' => now()->subHour()->toIso8601String()])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['scheduledCollectionAt']);
+
+        $this->assertDatabaseCount('delivery_jobs', 0);
+    }
+
+    public function test_a_standard_job_never_needs_the_mother_to_be_called_and_may_carry_a_time(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('needsMotherContact', false)
+            ->assertJsonPath('scheduledCollectionAt', null);
+
+        $past = now()->subDay()->startOfHour();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'scheduledCollectionAt' => $past->toIso8601String()])
+            ->assertCreated()
+            ->assertJsonPath('scheduledCollectionAt', $past->utc()->toIso8601String());
+    }
+
+    public function test_a_blank_or_invalid_schedule_is_treated_as_none_or_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'scheduledCollectionAt' => '  '])
+            ->assertCreated()
+            ->assertJsonPath('needsMotherContact', true);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'scheduledCollectionAt' => 'soon'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['scheduledCollectionAt']);
+    }
+
     public function test_a_milk_job_without_the_mothers_name_or_phone_is_rejected(): void
     {
         $this->fakeDirectory($this->volunteer('Controller'));
