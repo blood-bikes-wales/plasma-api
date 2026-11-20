@@ -104,6 +104,8 @@ class DeliveryJobResource extends JsonResource
                 $isRelay && $this->relationLoaded('legs'),
                 fn () => DeliveryJobResource::collection($this->legs),
             ),
+            // The earlier leg this one is waiting on before it can be collected or delivered; null when free to go.
+            'waitingForLeg' => $this->waitingForLeg(),
             'allowedActions' => $this->allowedActionNames(),
         ];
     }

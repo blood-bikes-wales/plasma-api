@@ -93,7 +93,8 @@ final class DeliveryJobService
             ])
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
-            ->get();
+            ->get()
+            ->each(static fn (DeliveryJob $job): DeliveryJob => $job->linkLegsToParent());
     }
 
     /**
@@ -121,7 +122,7 @@ final class DeliveryJobService
                 'collectionPlace',
                 'deliveryPlace',
                 'serviceAreas',
-            ]);
+            ])->linkLegsToParent();
         });
     }
 
@@ -144,6 +145,7 @@ final class DeliveryJobService
             ])->save();
 
             $updated = $locked->refresh()->load(['operationalShift.rider', 'collectionPlace', 'deliveryPlace', 'serviceAreas']);
+            $this->loadSiblingLegs($updated);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job allocated.', [
@@ -166,6 +168,7 @@ final class DeliveryJobService
             $locked = $this->lockJob($job->id);
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Collect);
+            $this->assertPreviousLegDelivered($locked, JobAction::Collect);
 
             $locked->fill([
                 'status' => JobStatus::Collected,
@@ -175,6 +178,7 @@ final class DeliveryJobService
             ])->save();
 
             $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
+            $this->loadSiblingLegs($updated);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job collected.', [
@@ -195,6 +199,7 @@ final class DeliveryJobService
             $locked = $this->lockJob($job->id);
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Deliver);
+            $this->assertPreviousLegDelivered($locked, JobAction::Deliver);
 
             $noRecipient = (bool) ($payload['noRecipient'] ?? false);
 
@@ -206,6 +211,7 @@ final class DeliveryJobService
             ])->save();
 
             $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
+            $this->loadSiblingLegs($updated);
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job delivered.', [
@@ -412,7 +418,7 @@ final class DeliveryJobService
             'collectionPlace',
             'deliveryPlace',
             'serviceAreas',
-        ]);
+        ])->linkLegsToParent();
     }
 
     private function syncRelayParentFromLeg(DeliveryJob $leg): void
@@ -487,7 +493,52 @@ final class DeliveryJobService
             ]);
         }
 
+        // Read inside the transaction, after the lock, so the previous-leg check never sees a copy
+        // loaded before the request started (route model binding).
+        $this->loadSiblingLegs($locked);
+
         return $locked;
+    }
+
+    /**
+     * Eager load the siblings of a relay leg in one go so allowed actions and waitingForLeg never query per leg.
+     */
+    private function loadSiblingLegs(DeliveryJob $job): void
+    {
+        if ($job->parent_job_id !== null) {
+            $job->load('parentJob.legs');
+        }
+    }
+
+    /**
+     * Leg N (N > 1) can only be collected or delivered once leg N-1 is Delivered. Allocating is not
+     * checked, so riders can be lined up in advance.
+     *
+     * No lock on the previous leg is needed. This runs inside the transaction on a fresh read, and
+     * Delivered is terminal (no action leaves it, and cancelling a relay skips Delivered legs), so
+     * a leg that reads Delivered stays Delivered. If leg N-1 is being delivered concurrently and
+     * has not committed yet we read its old status and reject, which is the same outcome as this
+     * request having arrived first; the caller can simply retry. Leg N therefore cannot complete
+     * out of order.
+     */
+    private function assertPreviousLegDelivered(DeliveryJob $leg, JobAction $action): void
+    {
+        $waitingFor = $leg->waitingForLeg();
+
+        if ($waitingFor === null) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'action' => [
+                sprintf(
+                    'Leg %d must be delivered before leg %d can be %s.',
+                    $waitingFor,
+                    $leg->leg_number,
+                    $action === JobAction::Collect ? 'collected' : 'delivered',
+                ),
+            ],
+        ]);
     }
 
     private function lockActiveShift(string $shiftId): OperationalShift

@@ -3,13 +3,22 @@
 namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
+use App\Enums\JobScope;
 use App\Enums\JobStatus;
+use App\Http\Resources\DeliveryJobResource;
 use App\Models\Bike;
 use App\Models\DeliveryJob;
 use App\Models\OperationalShift;
 use App\Models\Rider;
+use App\Models\User;
+use App\Services\Jobs\DeliveryJobService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class RelayDeliveryJobTest extends TestCase
@@ -499,6 +508,247 @@ class RelayDeliveryJobTest extends TestCase
             ->postJson("/api/jobs/{$job->id}/actions/allocate", ['shiftId' => $shift->id])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['job']);
+    }
+
+    /**
+     * @return array<string, array{0: JobStatus, 1: string}>
+     */
+    public static function blockedPreviousLegStatuses(): array
+    {
+        return [
+            'previous leg new' => [JobStatus::New, 'collect'],
+            'previous leg allocated, collect' => [JobStatus::Allocated, 'collect'],
+            'previous leg collected, collect' => [JobStatus::Collected, 'collect'],
+            'previous leg allocated, deliver' => [JobStatus::Allocated, 'deliver'],
+            'previous leg collected, deliver' => [JobStatus::Collected, 'deliver'],
+            'previous leg cancelled, collect' => [JobStatus::Cancelled, 'collect'],
+            'previous leg cancelled, deliver' => [JobStatus::Cancelled, 'deliver'],
+        ];
+    }
+
+    #[DataProvider('blockedPreviousLegStatuses')]
+    public function test_a_leg_cannot_be_collected_or_delivered_until_the_previous_leg_is_delivered(JobStatus $previous, string $action): void
+    {
+        [, $legs] = $this->relayWithLegs([$previous, $action === 'collect' ? JobStatus::Allocated : JobStatus::Collected]);
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $action === 'collect'
+            ? ['contentsConfirmed' => true, 'receiptNumber' => 'RCP-1']
+            : ['recipient' => 'Dr Patel'];
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[1]->id}/actions/{$action}", $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['action'])
+            ->assertJsonPath('errors.action.0', sprintf(
+                'Leg 1 must be delivered before leg 2 can be %s.',
+                $action === 'collect' ? 'collected' : 'delivered',
+            ));
+
+        $this->assertSame(
+            $action === 'collect' ? JobStatus::Allocated : JobStatus::Collected,
+            $legs[1]->fresh()->status,
+        );
+    }
+
+    public function test_a_leg_can_be_collected_and_delivered_once_the_previous_leg_is_delivered(): void
+    {
+        [, $legs] = $this->relayWithLegs([JobStatus::Delivered, JobStatus::Allocated]);
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[1]->id}/actions/collect", ['contentsConfirmed' => true, 'receiptNumber' => 'RCP-2'])
+            ->assertOk()
+            ->assertJsonPath('status', JobStatus::Collected->value)
+            ->assertJsonPath('waitingForLeg', null)
+            ->assertJsonPath('allowedActions', ['deliver', 'cancel']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[1]->id}/actions/deliver", ['recipient' => 'Dr Patel'])
+            ->assertOk()
+            ->assertJsonPath('status', JobStatus::Delivered->value);
+    }
+
+    public function test_the_first_leg_is_never_blocked(): void
+    {
+        [, $legs] = $this->relayWithLegs([JobStatus::Allocated, JobStatus::New, JobStatus::New]);
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[0]->id}/actions/collect", ['contentsConfirmed' => true, 'receiptNumber' => 'RCP-3'])
+            ->assertOk()
+            ->assertJsonPath('waitingForLeg', null)
+            ->assertJsonPath('allowedActions', ['deliver', 'cancel']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[0]->id}/actions/deliver", ['recipient' => 'Handoff'])
+            ->assertOk();
+    }
+
+    public function test_a_later_leg_can_still_be_allocated_while_earlier_legs_are_outstanding(): void
+    {
+        [, $legs] = $this->relayWithLegs([JobStatus::New, JobStatus::New, JobStatus::New]);
+        $shift = OperationalShift::factory()->create();
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$legs[2]->id}/actions/allocate", ['shiftId' => $shift->id])
+            ->assertOk()
+            ->assertJsonPath('status', JobStatus::Allocated->value)
+            ->assertJsonPath('waitingForLeg', 2)
+            ->assertJsonPath('allowedActions', ['cancel']);
+    }
+
+    public function test_the_job_list_exposes_the_blocked_state_of_each_leg(): void
+    {
+        $this->relayWithLegs([JobStatus::Delivered, JobStatus::Allocated, JobStatus::Allocated, JobStatus::New]);
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $response = $this->withToken('valid-token')->getJson('/api/jobs/active')->assertOk();
+
+        $response->assertJsonPath('data.0.legs.0.waitingForLeg', null)
+            ->assertJsonPath('data.0.legs.0.allowedActions', [])
+            ->assertJsonPath('data.0.legs.1.waitingForLeg', null)
+            ->assertJsonPath('data.0.legs.1.allowedActions', ['collect', 'cancel'])
+            ->assertJsonPath('data.0.legs.2.waitingForLeg', 2)
+            ->assertJsonPath('data.0.legs.2.allowedActions', ['cancel'])
+            ->assertJsonPath('data.0.legs.3.waitingForLeg', 3)
+            ->assertJsonPath('data.0.legs.3.allowedActions', ['allocate', 'cancel'])
+            ->assertJsonPath('data.0.waitingForLeg', null);
+    }
+
+    public function test_finished_legs_do_not_report_that_they_are_waiting(): void
+    {
+        [, $legs] = $this->relayWithLegs([JobStatus::New, JobStatus::Cancelled]);
+
+        $this->assertNull($legs[1]->waitingForLeg());
+        $this->assertSame([], $legs[1]->allowedActionNames());
+    }
+
+    public function test_the_previous_leg_is_found_by_leg_number_not_by_load_order(): void
+    {
+        $parent = DeliveryJob::factory()->create();
+        // Created out of order, so insertion order and leg_number disagree.
+        $third = DeliveryJob::factory()->allocated()->create(['parent_job_id' => $parent->id, 'leg_number' => 3]);
+        $first = DeliveryJob::factory()->delivered()->create(['parent_job_id' => $parent->id, 'leg_number' => 1]);
+        $second = DeliveryJob::factory()->collected()->create(['parent_job_id' => $parent->id, 'leg_number' => 2]);
+
+        $loaded = DeliveryJob::query()->with('parentJob.legs')->findOrFail($third->id);
+        $parent->load('legs');
+        $parent->setRelation('legs', $parent->legs->reverse()->values());
+        $loaded->parentJob->setRelation('legs', $parent->legs);
+
+        $this->assertSame($second->id, $loaded->previousLeg()?->id);
+        $this->assertSame(2, $loaded->waitingForLeg());
+        $this->assertNull(DeliveryJob::query()->with('parentJob.legs')->findOrFail($second->id)->waitingForLeg());
+        $this->assertNull(DeliveryJob::query()->with('parentJob.legs')->findOrFail($first->id)->previousLeg());
+    }
+
+    public function test_the_check_uses_a_fresh_read_not_the_copy_loaded_before_the_transaction(): void
+    {
+        [, $legs] = $this->relayWithLegs([JobStatus::Allocated, JobStatus::Allocated]);
+
+        // A copy loaded earlier that believes leg 1 is already delivered.
+        $stale = DeliveryJob::query()->with('parentJob.legs')->findOrFail($legs[1]->id);
+        $stale->parentJob->legs->first()->status = JobStatus::Delivered;
+
+        $actor = User::factory()->create();
+
+        try {
+            app(DeliveryJobService::class)->collect($actor, $stale, ['contentsConfirmed' => true, 'receiptNumber' => 'RCP-4']);
+            $this->fail('Collect should have been rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertSame(
+                ['Leg 1 must be delivered before leg 2 can be collected.'],
+                $exception->errors()['action'],
+            );
+        }
+
+        $this->assertSame(JobStatus::Allocated, $legs[1]->fresh()->status);
+    }
+
+    public function test_listing_jobs_does_not_query_per_leg(): void
+    {
+        $this->relayWithLegs([JobStatus::Delivered, JobStatus::Allocated]);
+        $service = app(DeliveryJobService::class);
+
+        $countQueries = function () use ($service): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $jobs = $service->listByScope(JobScope::Active);
+            // Serialise as the endpoint does, which is what asks each leg for its allowed actions.
+            $request = Request::create('/api/jobs/active');
+            DeliveryJobResource::collection($jobs)->toResponse($request);
+            $count = count(DB::getQueryLog());
+            DB::disableQueryLog();
+
+            return $count;
+        };
+
+        $small = $countQueries();
+
+        $this->relayWithLegs([JobStatus::Delivered, JobStatus::Delivered, JobStatus::Collected, JobStatus::New, JobStatus::New, JobStatus::New]);
+
+        $this->assertSame($small, $countQueries());
+    }
+
+    public function test_the_relay_and_cancel_responses_report_blocked_legs_without_extra_queries(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0230']);
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    ['placeId' => 'ChIJRendezvous0030', 'address' => 'First', 'latitude' => 51.5, 'longitude' => -3.1, 'arrivesAt' => '2026-11-20T10:15:00+00:00'],
+                    ['placeId' => 'ChIJRendezvous0031', 'address' => 'Second', 'latitude' => 51.6, 'longitude' => -3.2, 'arrivesAt' => '2026-11-20T11:15:00+00:00'],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('legs.0.waitingForLeg', null)
+            ->assertJsonPath('legs.1.waitingForLeg', 1)
+            ->assertJsonPath('legs.2.waitingForLeg', 2);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/cancel", ['reason' => 'No longer needed'])
+            ->assertOk()
+            ->assertJsonPath('legs.1.waitingForLeg', null)
+            ->assertJsonPath('legs.1.allowedActions', []);
+    }
+
+    public function test_delivery_jobs_are_indexed_by_parent_and_leg_number(): void
+    {
+        $this->assertTrue(Schema::hasIndex('delivery_jobs', ['parent_job_id', 'leg_number'], 'unique'));
+    }
+
+    /**
+     * Builds a relay parent whose legs (numbered from 1) take the given statuses.
+     *
+     * @param  list<JobStatus>  $statuses
+     * @return array{0: DeliveryJob, 1: list<DeliveryJob>}
+     */
+    private function relayWithLegs(array $statuses): array
+    {
+        $parent = DeliveryJob::factory()->create();
+
+        $legs = [];
+        foreach ($statuses as $index => $status) {
+            $legs[] = DeliveryJob::factory()->create([
+                'status' => $status,
+                'parent_job_id' => $parent->id,
+                'leg_number' => $index + 1,
+            ]);
+        }
+
+        $parent->update(['status' => JobStatus::Allocated]);
+
+        return [$parent, $legs];
     }
 
     /**
