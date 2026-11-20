@@ -99,6 +99,137 @@ class ListDeliveryJobsTest extends TestCase
             ->assertJsonPath('data.2.reference', 'JB-1040');
     }
 
+    #[DataProvider('everyRoleThatCanViewJobs')]
+    public function test_active_scope_never_hides_a_job_by_its_date(string $role): void
+    {
+        // The 24 hour hiding belongs to the completed list only. Whatever its
+        // scheduled day (past, today, next week, next year) or none at all, an
+        // active job is listed.
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        DeliveryJob::factory()->create(['reference' => 'JB-1040', 'scheduled_collection_at' => null]);
+        DeliveryJob::factory()->create(['reference' => 'JB-1041', 'scheduled_collection_at' => '2026-08-05 09:00:00']);
+        DeliveryJob::factory()->create(['reference' => 'JB-1042', 'scheduled_collection_at' => '2026-08-29 15:00:00']);
+        DeliveryJob::factory()->create(['reference' => 'JB-1043', 'scheduled_collection_at' => '2026-09-05 10:00:00']);
+        DeliveryJob::factory()->allocated()->create(['reference' => 'JB-1044', 'scheduled_collection_at' => '2026-09-05 11:00:00']);
+        DeliveryJob::factory()->create(['reference' => 'JB-1045', 'scheduled_collection_at' => '2027-08-29 10:00:00']);
+
+        // Created and last touched months ago, so the 24 hour window (which looks at updated_at)
+        // would hide every one of them if it were ever applied to the active list. The
+        // "show all previous jobs" setting does not matter here: it only affects Completed.
+        DeliveryJob::query()->update([
+            'created_at' => '2026-01-01 00:00:00',
+            'updated_at' => '2026-01-01 00:00:00',
+        ]);
+
+        $this->fakeDirectory($this->volunteer($role));
+        $this->mockVerifiedClaims();
+
+        $references = collect(
+            $this->withToken('valid-token')
+                ->getJson('/api/jobs/active')
+                ->assertOk()
+                ->assertJsonCount(6, 'data')
+                ->json('data')
+        )->pluck('reference')->all();
+
+        $this->assertEqualsCanonicalizing(
+            ['JB-1040', 'JB-1041', 'JB-1042', 'JB-1043', 'JB-1044', 'JB-1045'],
+            $references,
+        );
+    }
+
+    public function test_active_scope_returns_a_job_scheduled_next_week_with_its_time(): void
+    {
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        DeliveryJob::factory()->create([
+            'reference' => 'JB-1050',
+            'scheduled_collection_at' => '2026-09-05 10:00:00',
+        ]);
+        DeliveryJob::factory()->create(['reference' => 'JB-1051', 'scheduled_collection_at' => null]);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonFragment(['reference' => 'JB-1050', 'scheduledCollectionAt' => '2026-09-05T10:00:00+00:00'])
+            ->assertJsonFragment(['reference' => 'JB-1051', 'scheduledCollectionAt' => null]);
+    }
+
+    public function test_active_scope_stays_in_last_updated_order_whatever_the_scheduled_time(): void
+    {
+        // Which jobs are "due today" depends on the viewer's own day, which the
+        // API does not know, so it does not reorder by schedule. The app does.
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        DeliveryJob::factory()->create(['reference' => 'JB-1060', 'scheduled_collection_at' => '2026-09-05 10:00:00']);
+
+        Carbon::setTestNow('2026-08-29 10:00:01');
+        DeliveryJob::factory()->create(['reference' => 'JB-1061', 'scheduled_collection_at' => null]);
+
+        Carbon::setTestNow('2026-08-29 10:00:02');
+        DeliveryJob::factory()->create(['reference' => 'JB-1062', 'scheduled_collection_at' => '2026-08-30 08:00:00']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.reference', 'JB-1062')
+            ->assertJsonPath('data.1.reference', 'JB-1061')
+            ->assertJsonPath('data.2.reference', 'JB-1060');
+    }
+
+    public function test_active_jobs_last_updated_at_the_same_moment_are_listed_highest_id_first(): void
+    {
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        $one = DeliveryJob::factory()->create(['reference' => 'JB-1080']);
+        $two = DeliveryJob::factory()->create(['reference' => 'JB-1081', 'scheduled_collection_at' => '2026-09-05 10:00:00']);
+        $three = DeliveryJob::factory()->create(['reference' => 'JB-1082']);
+
+        $expected = collect([$one, $two, $three])
+            ->sortByDesc('id')
+            ->pluck('reference')
+            ->values()
+            ->all();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->assertSame(
+            $expected,
+            collect(
+                $this->withToken('valid-token')->getJson('/api/jobs/active')->assertOk()->json('data')
+            )->pluck('reference')->all(),
+        );
+    }
+
+    public function test_a_future_relay_parent_is_listed_once_without_its_legs_as_separate_jobs(): void
+    {
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        $parent = DeliveryJob::factory()->create([
+            'reference' => 'JB-1070',
+            'scheduled_collection_at' => '2026-09-05 10:00:00',
+        ]);
+        DeliveryJob::factory()->create([
+            'reference' => 'JB-1070-L1',
+            'parent_job_id' => $parent->id,
+            'leg_number' => 1,
+            'scheduled_collection_at' => '2026-09-05 10:00:00',
+        ]);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.reference', 'JB-1070');
+    }
+
     public function test_completed_scope_returns_delivered_and_cancelled_jobs(): void
     {
         DeliveryJob::factory()->create(['reference' => 'JB-1040']);
