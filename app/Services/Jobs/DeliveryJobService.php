@@ -253,6 +253,15 @@ final class DeliveryJobService
     }
 
     /**
+     * Allocate a rider (an active shift) to a New job, or change the rider of an Allocated one until
+     * it is collected.
+     *
+     * Re-allocating replaces operational_shift_id and sets allocated_at to the new allocation, all
+     * under the same row lock as every other transition. Allocating to the shift the job already has
+     * is a no-op (nothing is written, so updated_at and allocated_at stay put), even if that shift has
+     * since been logged off, so a retried request is harmless. Any other target must be an active
+     * shift; if it is not, the exception leaves the existing rider untouched.
+     *
      * @param  array<string, mixed>  $payload
      */
     public function allocate(User $actor, DeliveryJob $job, array $payload): DeliveryJob
@@ -262,6 +271,13 @@ final class DeliveryJobService
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Allocate);
 
+            if ($locked->status === JobStatus::Allocated
+                && $locked->operational_shift_id !== null
+                && strtolower($locked->operational_shift_id) === strtolower((string) $payload['shiftId'])) {
+                return $this->reloadAfterAllocate($locked);
+            }
+
+            $previousShiftId = $locked->operational_shift_id;
             $shift = $this->lockActiveShift($payload['shiftId']);
 
             $locked->fill([
@@ -270,19 +286,27 @@ final class DeliveryJobService
                 'allocated_at' => now(),
             ])->save();
 
-            $updated = $locked->refresh()->load(['operationalShift.rider', 'collectionPlace', 'deliveryPlace', 'serviceAreas']);
-            $this->loadSiblingLegs($updated);
+            $updated = $this->reloadAfterAllocate($locked);
             $this->syncRelayParentFromLeg($updated);
 
-            Log::info('Delivery job allocated.', [
+            Log::info($previousShiftId === null ? 'Delivery job allocated.' : 'Delivery job re-allocated.', [
                 'job_id' => $updated->id,
                 'shift_id' => $shift->id,
+                'previous_shift_id' => $previousShiftId,
                 'rider_id' => $shift->rider_id,
                 'user_id' => $actor->id,
             ]);
 
             return $updated;
         });
+    }
+
+    private function reloadAfterAllocate(DeliveryJob $locked): DeliveryJob
+    {
+        $updated = $locked->refresh()->load(['operationalShift.rider', 'collectionPlace', 'deliveryPlace', 'serviceAreas']);
+        $this->loadSiblingLegs($updated);
+
+        return $updated;
     }
 
     /**
