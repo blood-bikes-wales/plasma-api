@@ -2,6 +2,9 @@
 
 namespace App\Http\Resources;
 
+use App\Authorization\Capability;
+use App\Authorization\RequestRoles;
+use App\Enums\JobType;
 use App\Models\DeliveryJob;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -40,6 +43,15 @@ class DeliveryJobResource extends JsonResource
                 'phone' => $this->sender_phone,
                 'organisation' => $this->sender_organisation,
             ],
+            // Personal data about a member of the public: only roles that can create jobs (admin, controller) get the key at all.
+            'mother' => $this->when(
+                RequestRoles::hasCapability($request, Capability::CreateJob),
+                fn () => $this->job_type === JobType::Milk ? [
+                    'name' => $this->mother_name,
+                    'phone' => $this->mother_phone,
+                    'secondaryPhone' => $this->mother_phone_secondary,
+                ] : null,
+            ),
             'collection' => [
                 'placeId' => $collection?->external_id,
                 'address' => $collection?->address,

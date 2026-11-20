@@ -141,7 +141,7 @@ class CreateDeliveryJobTest extends TestCase
         $this->mockVerifiedClaims();
 
         $this->withToken('valid-token')
-            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 2.5])
+            ->postJson('/api/jobs', $this->milkPayload())
             ->assertCreated()
             ->assertJsonPath('jobType', 'milk')
             ->assertJsonPath('milkLitres', 2.5);
@@ -164,7 +164,7 @@ class CreateDeliveryJobTest extends TestCase
         $this->mockVerifiedClaims();
 
         $this->withToken('valid-token')
-            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 4])
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'milkLitres' => 4])
             ->assertCreated()
             ->assertJsonPath('jobType', 'milk')
             ->assertJsonPath('milkLitres', 4);
@@ -176,7 +176,7 @@ class CreateDeliveryJobTest extends TestCase
         $this->mockVerifiedClaims();
 
         $this->withToken('valid-token')
-            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 2.5])
+            ->postJson('/api/jobs', $this->milkPayload())
             ->assertForbidden();
 
         $this->assertSame(0, DeliveryJob::query()->count());
@@ -264,9 +264,205 @@ class CreateDeliveryJobTest extends TestCase
         $this->mockVerifiedClaims();
 
         $this->withToken('valid-token')
-            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => JobType::MAX_MILK_LITRES])
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'milkLitres' => JobType::MAX_MILK_LITRES])
             ->assertCreated()
             ->assertJsonPath('milkLitres', JobType::MAX_MILK_LITRES);
+    }
+
+    public function test_a_milk_job_stores_and_returns_the_mothers_contact(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->milkPayload())
+            ->assertCreated()
+            ->assertJsonPath('mother.name', 'Megan Evans')
+            ->assertJsonPath('mother.phone', '07700 900101')
+            ->assertJsonPath('mother.secondaryPhone', '029 2018 0000');
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'mother_name' => 'Megan Evans',
+            'mother_phone' => '07700 900101',
+            'mother_phone_secondary' => '029 2018 0000',
+        ]);
+    }
+
+    public function test_the_mothers_second_phone_is_optional(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        unset($payload['mother']['secondaryPhone']);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('mother.phone', '07700 900101')
+            ->assertJsonPath('mother.secondaryPhone', null);
+
+        foreach ([null, '', '   '] as $blank) {
+            $payload['mother']['secondaryPhone'] = $blank;
+
+            $this->withToken('valid-token')
+                ->postJson('/api/jobs', $payload)
+                ->assertCreated()
+                ->assertJsonPath('mother.secondaryPhone', null);
+        }
+
+        $this->assertDatabaseMissing('delivery_jobs', ['mother_phone_secondary' => '']);
+    }
+
+    public function test_an_admin_can_create_a_milk_job_and_sees_the_mothers_contact(): void
+    {
+        User::factory()->admin()->create([
+            'email' => 'rider@bloodbikes.wales',
+            'google_id' => null,
+        ]);
+
+        Http::fake([
+            'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => []]),
+        ]);
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->milkPayload())
+            ->assertCreated()
+            ->assertJsonPath('mother.name', 'Megan Evans');
+    }
+
+    public function test_a_milk_job_without_the_mothers_name_or_phone_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        unset($payload['mother']);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother.name', 'mother.phone']);
+
+        $payload = $this->milkPayload();
+        $payload['mother']['name'] = '';
+        $payload['mother']['phone'] = null;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother.name', 'mother.phone'])
+            ->assertJsonMissingValidationErrors(['mother.secondaryPhone']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    #[DataProvider('invalidPhoneProvider')]
+    public function test_an_invalid_mother_phone_is_rejected(?string $phone): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        $payload['mother']['phone'] = $phone;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother.phone']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    #[DataProvider('validPhoneProvider')]
+    public function test_valid_uk_numbers_are_accepted_for_both_mother_phones(string $phone): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        $payload['mother']['phone'] = $phone;
+        $payload['mother']['secondaryPhone'] = $phone;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('mother.phone', trim($phone))
+            ->assertJsonPath('mother.secondaryPhone', trim($phone));
+    }
+
+    #[DataProvider('invalidNonBlankPhoneProvider')]
+    public function test_an_invalid_second_mother_phone_is_rejected_when_not_blank(string $phone): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        $payload['mother']['secondaryPhone'] = $phone;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother.secondaryPhone'])
+            ->assertJson([
+                'errors' => [
+                    'mother.secondaryPhone' => ['Enter a valid UK phone number, for example 029 2074 7747'],
+                ],
+            ]);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_standard_job_with_a_mother_object_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $mother = $this->milkPayload()['mother'];
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'standard', 'mother' => $mother])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother']);
+
+        // The deployed SPA sends no jobType, which means standard.
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'mother' => $mother])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_standard_job_returns_no_mother_and_stores_none(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'mother' => null])
+            ->assertCreated()
+            ->assertJsonPath('mother', null);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'mother_name' => null,
+            'mother_phone' => null,
+            'mother_phone_secondary' => null,
+        ]);
+    }
+
+    public function test_a_mother_that_is_not_an_object_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'mother' => 'Megan'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['mother']);
     }
 
     public function test_locations_missing_a_place_id_are_rejected(): void
@@ -660,6 +856,17 @@ class CreateDeliveryJobTest extends TestCase
     }
 
     /**
+     * @return array<string, array{string}>
+     */
+    public static function invalidNonBlankPhoneProvider(): array
+    {
+        return array_filter(
+            self::invalidPhoneProvider(),
+            static fn (array $case): bool => $case[0] !== null && $case[0] !== '',
+        );
+    }
+
+    /**
      * @return array<string, array{string|null}>
      */
     public static function invalidPhoneProvider(): array
@@ -675,6 +882,23 @@ class CreateDeliveryJobTest extends TestCase
             'international' => ['+1 202 555 0143'],
             'empty' => [''],
             'missing' => [null],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function milkPayload(): array
+    {
+        return [
+            ...$this->validPayload(),
+            'jobType' => 'milk',
+            'milkLitres' => 2.5,
+            'mother' => [
+                'name' => 'Megan Evans',
+                'phone' => '07700 900101',
+                'secondaryPhone' => '029 2018 0000',
+            ],
         ];
     }
 

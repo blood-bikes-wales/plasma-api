@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class ListDeliveryJobsTest extends TestCase
@@ -161,6 +162,83 @@ class ListDeliveryJobsTest extends TestCase
             ->getJson('/api/jobs/active')
             ->assertOk()
             ->assertJsonPath('data.0.reference', 'JB-1042');
+    }
+
+    public function test_a_controller_sees_the_mothers_contact_on_milk_jobs_and_null_on_standard_jobs(): void
+    {
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        DeliveryJob::factory()->milk()->create(['reference' => 'JB-1100']);
+        Carbon::setTestNow('2026-08-29 11:00:00');
+        DeliveryJob::factory()->create(['reference' => 'JB-1101']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.reference', 'JB-1101')
+            ->assertJsonPath('data.0.mother', null)
+            ->assertJsonPath('data.1.reference', 'JB-1100')
+            ->assertJsonPath('data.1.mother', [
+                'name' => 'Megan Evans',
+                'phone' => '07700 900101',
+                'secondaryPhone' => '029 2018 0000',
+            ]);
+    }
+
+    public function test_an_admin_sees_the_mothers_contact(): void
+    {
+        DeliveryJob::factory()->milk()->create(['reference' => 'JB-1100']);
+
+        User::factory()->admin()->create([
+            'email' => 'rider@bloodbikes.wales',
+            'google_id' => null,
+        ]);
+
+        Http::fake([
+            'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => []]),
+        ]);
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.mother.name', 'Megan Evans')
+            ->assertJsonPath('data.0.mother.phone', '07700 900101');
+    }
+
+    #[DataProvider('rolesThatCannotSeeTheMother')]
+    public function test_roles_that_cannot_create_jobs_never_receive_the_mothers_contact(string $role): void
+    {
+        DeliveryJob::factory()->milk()->create(['reference' => 'JB-1100']);
+
+        $this->fakeDirectory($this->volunteer($role));
+        $this->mockVerifiedClaims();
+
+        $response = $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.reference', 'JB-1100')
+            ->assertJsonPath('data.0.jobType', 'milk')
+            ->assertJsonMissingPath('data.0.mother');
+
+        $body = $response->getContent();
+        $this->assertStringNotContainsString('Megan Evans', $body);
+        $this->assertStringNotContainsString('07700 900101', $body);
+        $this->assertStringNotContainsString('029 2018 0000', $body);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function rolesThatCannotSeeTheMother(): array
+    {
+        return [
+            'rider' => ['Rider'],
+            'driver' => ['Driver'],
+            'trustee' => ['Trustee'],
+        ];
     }
 
     /**

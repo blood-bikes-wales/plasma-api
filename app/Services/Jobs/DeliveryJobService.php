@@ -36,6 +36,8 @@ final class DeliveryJobService
             $deliveryPlace = $this->upsertPlace($delivery);
 
             $jobType = JobType::tryFrom((string) ($payload['jobType'] ?? '')) ?? JobType::Standard;
+            // Only milk jobs carry a mother's contact; the request rejects it for any other type.
+            $mother = $jobType === JobType::Milk ? ($payload['mother'] ?? null) : null;
 
             $job = DeliveryJob::query()->create([
                 'reference' => $this->nextReference(),
@@ -45,6 +47,9 @@ final class DeliveryJobService
                 'sender_name' => $sender['name'],
                 'sender_phone' => $sender['phone'],
                 'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
+                'mother_name' => $mother === null ? null : $this->normaliseOptionalText($mother['name'] ?? null),
+                'mother_phone' => $mother === null ? null : $this->normaliseOptionalText($mother['phone'] ?? null),
+                'mother_phone_secondary' => $mother === null ? null : $this->normaliseOptionalText($mother['secondaryPhone'] ?? null),
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
                 'collection_notes' => $this->normaliseOptionalText($collection['notes'] ?? null),
@@ -344,6 +349,9 @@ final class DeliveryJobService
                 'sender_name' => $parent->sender_name,
                 'sender_phone' => $parent->sender_phone,
                 'sender_organisation' => $parent->sender_organisation,
+                'mother_name' => $parent->mother_name,
+                'mother_phone' => $parent->mother_phone,
+                'mother_phone_secondary' => $parent->mother_phone_secondary,
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
                 // Only rendezvous points carry arrivesAt, so the last leg (to the final delivery) stays null.
