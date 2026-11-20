@@ -15,24 +15,46 @@ use App\Http\Resources\DeliveryJobResource;
 use App\Models\DeliveryJob;
 use App\Models\User;
 use App\Services\Jobs\DeliveryJobService;
+use App\Services\Users\UserSettingsService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class JobController extends Controller
 {
-    public function __construct(private readonly DeliveryJobService $jobs) {}
+    public function __construct(
+        private readonly DeliveryJobService $jobs,
+        private readonly UserSettingsService $settings,
+    ) {}
 
-    public function index(string $scope): JsonResponse
+    public function index(Request $request, string $scope): JsonResponse
     {
         $jobScope = JobScope::tryFrom($scope);
         if ($jobScope === null) {
             abort(404);
         }
 
+        /** @var User $user */
+        $user = $request->user();
+
+        // Only the Completed list is age-filtered, and only for users who have not asked for every job.
+        $includeOlderCompleted = $jobScope !== JobScope::Completed
+            || $this->settings->showCompletedJobs($user);
+
         return response()->json([
-            'data' => DeliveryJobResource::collection($this->jobs->listByScope($jobScope)),
+            'data' => DeliveryJobResource::collection(
+                $this->jobs->listByScope($jobScope, $includeOlderCompleted),
+            ),
         ]);
+    }
+
+    /**
+     * A job by id, whatever its age: the completed-job age filter never applies here, so a
+     * link to an old job keeps working.
+     */
+    public function show(DeliveryJob $job): JsonResponse
+    {
+        return (new DeliveryJobResource($this->jobs->find($job)))->response();
     }
 
     public function store(StoreDeliveryJobRequest $request): JsonResponse

@@ -33,6 +33,10 @@ class MeResource extends JsonResource
                 static fn (Role $role): string => $role->value,
                 is_array($roles) ? $roles : [],
             ),
+            // Defaults for a user who has never saved a setting (no row yet).
+            'settings' => [
+                'showCompletedJobs' => $this->settings?->show_completed_jobs ?? false,
+            ],
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

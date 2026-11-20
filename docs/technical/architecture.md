@@ -88,7 +88,8 @@ Do not document routes that are not registered.
 |--------|------|------|----------|
 | GET | `/up` | none | Health |
 | GET | `/api/` | none | `{ "name": <app.name> }` |
-| GET | `/api/me` | `auth.google` | Authenticated user JSON with `roles` array (no `is_admin` field) |
+| GET | `/api/me` | `auth.google` | Authenticated user JSON with `roles` array (no `is_admin` field) and `settings: { showCompletedJobs }` (false until the user saves one) |
+| PATCH | `/api/me` | `auth.google` (any signed-in user, no role needed) | Change the caller's own settings; body `{ showCompletedJobs: boolean }` (required, 422 otherwise); returns the updated profile |
 | GET | `/api/shifts/active` | `auth.google` + any Plasma role | `{ "data": [ ActiveShift, … ] }` camelCase |
 | GET | `/api/bikes` | `auth.google` + controller or trustee (`view-bikes`) | `{ "data": [ { id, registration, area, status, lastRecordedMileage, purchasedAt? } ] }` — active bikes for shift logon; optional `status` / `area` query filters require `manage-bikes` |
 | POST | `/api/bikes` | `auth.google` + trustee/admin (`manage-bikes`) | Create bike; body `{ registration, area, lastRecordedMileage, purchasedAt? }`; 201 |
@@ -103,7 +104,8 @@ Do not document routes that are not registered.
 | GET | `/api/directory/bikes/{id}` | `auth.google` + any Plasma role (`view-directory`) | Bike detail with `mileageHistory` |
 | POST | `/api/shifts/logon` | `auth.google` + controller (admin via hierarchy) | ActiveShift camelCase (`riderId`, `startMileage`, …). The bike must be in one of the rider's areas (see `areas` on `/api/volunteers`); otherwise 422 on `bikeId` |
 | POST | `/api/shifts/{shift}/logoff` | `auth.google` + controller (admin via hierarchy) | ActiveShift; body `{ endMileage, faults?, bikeKeptAt? }` (`lockup` default, or `home`) |
-| GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled) |
+| GET | `/api/jobs/{scope}` | `auth.google` + any Plasma role | `{ "data": [ DeliveryJob, … ] }` for `active` (New/Allocated/Collected) or `completed` (Delivered/Cancelled). `completed` only lists jobs completed in the last 24 hours (the claimed `delivered_at` / `cancelled_at`, or the server-recorded `updated_at`; either being recent is enough) unless the caller's `settings.showCompletedJobs` is true |
+| GET | `/api/jobs/{id}` | `auth.google` + any Plasma role (`view-jobs`) | One `DeliveryJob` (uuid; a top-level job or a relay leg) shaped like the list items, never age-filtered; 404 for an unknown or malformed id |
 | POST | `/api/jobs` | `auth.google` + controller (`create-job`) | Delivery job camelCase (`reference`, `status: New`, Places `collection`/`delivery`); 201. `contents` must be the name of an active `/api/job-contents` entry (422 otherwise) |
 | POST | `/api/jobs/{id}/relay` | `auth.google` + controller (`create-job`) | Convert a New job to relay; body `{ rendezvousPoints: [ Places location, … ] }`; creates legs `{reference}-L{n}` |
 | POST | `/api/jobs/{id}/actions/allocate` | `auth.google` + controller (`create-job`) | New → Allocated; body `{ shiftId }` (active operational shift) |

@@ -18,7 +18,9 @@ Route::get('/', fn () => response()->json([
 ]));
 
 Route::middleware(['auth.google', 'roles'])->group(function () {
-    Route::get('/me', MeController::class)->name('me');
+    // Any signed-in user, whatever their roles: a profile and its own settings are not a capability.
+    Route::get('/me', [MeController::class, 'show'])->name('me');
+    Route::patch('/me', [MeController::class, 'update'])->name('me.update');
 
     Route::middleware('access:view-active-shifts')->group(function () {
         Route::get('/shifts/active', [ShiftController::class, 'active'])->name('shifts.active');
@@ -51,6 +53,11 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
                 JobScope::cases(),
             ))
             ->name('jobs.index');
+        // Constrained to a uuid so it can never swallow /jobs/active or /jobs/completed (or any
+        // other word), and so a malformed id is a 404 rather than a Postgres uuid cast error.
+        Route::get('/jobs/{job}', [JobController::class, 'show'])
+            ->whereUuid('job')
+            ->name('jobs.show');
     });
 
     Route::middleware('access:view-directory')->group(function () {
