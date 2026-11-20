@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'status',
     'job_type',
     'milk_litres',
+    'is_bereavement',
     'sender_name',
     'sender_phone',
     'sender_organisation',
@@ -59,6 +60,7 @@ class DeliveryJob extends Model
      */
     protected $attributes = [
         'job_type' => 'standard',
+        'is_bereavement' => false,
     ];
 
     /**
@@ -70,6 +72,7 @@ class DeliveryJob extends Model
             'status' => JobStatus::class,
             'job_type' => JobType::class,
             'milk_litres' => 'float',
+            'is_bereavement' => 'boolean',
             'contents_confirmed' => 'boolean',
             'leg_number' => 'integer',
             'estimated_collection_at' => 'datetime',

@@ -159,6 +159,36 @@ class RelayDeliveryJobTest extends TestCase
             ->count());
     }
 
+    public function test_relay_legs_inherit_the_bereavement_flag_of_a_milk_job(): void
+    {
+        $job = DeliveryJob::factory()->bereavement()->create(['reference' => 'JB-0208']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0008',
+                        'address' => 'Services, M4 Junction 32',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('isBereavement', true)
+            ->assertJsonPath('legs.0.isBereavement', true)
+            ->assertJsonPath('legs.1.isBereavement', true);
+
+        $this->assertSame(2, DeliveryJob::query()
+            ->where('parent_job_id', $job->id)
+            ->where('is_bereavement', true)
+            ->count());
+    }
+
     public function test_relay_legs_of_a_standard_job_stay_standard_without_litres(): void
     {
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0206']);
@@ -184,7 +214,9 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.mother', null)
             ->assertJsonPath('legs.1.jobType', 'standard')
             ->assertJsonPath('legs.1.milkLitres', null)
-            ->assertJsonPath('legs.1.mother', null);
+            ->assertJsonPath('legs.1.mother', null)
+            ->assertJsonPath('legs.0.isBereavement', false)
+            ->assertJsonPath('legs.1.isBereavement', false);
     }
 
     public function test_a_relay_stores_the_arrival_time_on_each_leg_that_delivers_to_a_rendezvous(): void
