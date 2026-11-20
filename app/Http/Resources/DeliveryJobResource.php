@@ -73,6 +73,13 @@ class DeliveryJobResource extends JsonResource
             'estimatedCollectionAt' => $this->estimated_collection_at?->toIso8601String(),
             'estimatedDeliveryAt' => $this->estimated_delivery_at?->toIso8601String(),
             'plannedArrivalAt' => $this->planned_arrival_at?->toIso8601String(),
+            // The arranged day and time of the collection. Operational detail every role that sees the job may see, like the estimates above.
+            'scheduledCollectionAt' => $this->scheduled_collection_at?->toIso8601String(),
+            // Whether the controller still has to call the mother. Only the roles that can create jobs (and see the mother's contact) are told.
+            'needsMotherContact' => $this->when(
+                RequestRoles::hasCapability($request, Capability::CreateJob),
+                fn () => $this->needsMotherContact(),
+            ),
             'contents' => $this->contents,
             'serviceAreas' => $this->whenLoaded(
                 'serviceAreas',

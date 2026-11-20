@@ -58,6 +58,7 @@ final class DeliveryJobService
                 'delivery_notes' => $this->normaliseOptionalText($delivery['notes'] ?? null),
                 'estimated_collection_at' => $this->parseTimestamp($payload['estimatedCollectionAt'] ?? null),
                 'estimated_delivery_at' => $this->parseTimestamp($payload['estimatedDeliveryAt'] ?? null),
+                'scheduled_collection_at' => $this->parseTimestamp($payload['scheduledCollectionAt'] ?? null),
                 'contents' => $payload['contents'],
                 'created_by_user_id' => $actor->id,
             ]);
@@ -172,6 +173,53 @@ final class DeliveryJobService
                 ->orWhere(fn (Builder $query) => $query
                     ->where('status', JobStatus::Cancelled)
                     ->where('cancelled_at', '>=', $since));
+        });
+    }
+
+    /**
+     * Set or change when the job's collection is arranged for, while it is New or Allocated.
+     * The request has already insisted on a future time for a milk job.
+     *
+     * A relay is scheduled through its top-level job, which hands the time to every leg that is
+     * still New or Allocated; a leg on its own cannot be scheduled.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function schedule(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    {
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
+            $locked = $this->lockJob($job->id);
+
+            // Checked on the locked row, before anything is written, so a rejected call never touches updated_at.
+            if ($locked->parent_job_id !== null) {
+                throw ValidationException::withMessages([
+                    'job' => ['Schedule a relay through the whole job, not one of its legs.'],
+                ]);
+            }
+
+            if (! in_array($locked->status, [JobStatus::New, JobStatus::Allocated], true)) {
+                throw ValidationException::withMessages([
+                    'job' => [sprintf('Job is %s. Only a New or Allocated job can be scheduled.', $locked->status->value)],
+                ]);
+            }
+
+            $scheduledAt = $this->parseTimestamp($payload['scheduledCollectionAt']);
+
+            $locked->fill(['scheduled_collection_at' => $scheduledAt])->save();
+
+            if ($locked->isRelayParent()) {
+                DeliveryJob::query()
+                    ->where('parent_job_id', $locked->id)
+                    ->whereIn('status', [JobStatus::New, JobStatus::Allocated])
+                    ->update(['scheduled_collection_at' => $scheduledAt]);
+            }
+
+            Log::info('Delivery job scheduled.', [
+                'job_id' => $locked->id,
+                'user_id' => $actor->id,
+            ]);
+
+            return $this->find($locked->refresh());
         });
     }
 
@@ -447,6 +495,8 @@ final class DeliveryJobService
                 'delivery_place_id' => $deliveryPlace->id,
                 // Only rendezvous points carry arrivesAt, so the last leg (to the final delivery) stays null.
                 'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null),
+                // The relay is arranged for one day, so every leg shares it.
+                'scheduled_collection_at' => $parent->scheduled_collection_at,
                 'contents' => $parent->contents,
                 'created_by_user_id' => $actor->id,
             ]);

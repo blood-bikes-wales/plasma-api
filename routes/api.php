@@ -75,6 +75,10 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
         Route::post('/jobs/{job}/actions/{action}', [JobController::class, 'action'])
             ->whereIn('action', ['allocate', 'collect', 'deliver'])
             ->name('jobs.action');
+        // Constrained to a uuid like GET /jobs/{job}, so a malformed id is a 404 rather than a Postgres uuid cast error.
+        Route::post('/jobs/{job}/schedule', [JobController::class, 'schedule'])
+            ->whereUuid('job')
+            ->name('jobs.schedule');
         Route::post('/jobs/{job}/cancel', [JobController::class, 'cancel'])->name('jobs.cancel');
     });
 

@@ -44,6 +44,39 @@ class RelayDeliveryJobTest extends TestCase
         Http::preventStrayRequests();
     }
 
+    public function test_relay_legs_share_the_parents_scheduled_time_and_never_ask_for_mother_contact(): void
+    {
+        $job = DeliveryJob::factory()->milk()->create(['scheduled_collection_at' => '2026-11-27 10:00:00']);
+        $unscheduled = DeliveryJob::factory()->milk()->create();
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $rendezvous = [[
+            'placeId' => 'ChIJRendezvous1',
+            'address' => 'Services, M4',
+            'latitude' => 51.6,
+            'longitude' => -3.4,
+            'arrivesAt' => '2026-11-27T11:00:00Z',
+        ]];
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", ['rendezvousPoints' => $rendezvous])
+            ->assertOk()
+            ->assertJsonPath('scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
+            ->assertJsonPath('needsMotherContact', false)
+            ->assertJsonPath('legs.0.scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
+            ->assertJsonPath('legs.1.scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
+            ->assertJsonPath('legs.0.needsMotherContact', false);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$unscheduled->id}/relay", ['rendezvousPoints' => $rendezvous])
+            ->assertOk()
+            ->assertJsonPath('needsMotherContact', true)
+            ->assertJsonPath('legs.0.needsMotherContact', false)
+            ->assertJsonPath('legs.0.scheduledCollectionAt', null);
+    }
+
     public function test_a_controller_can_convert_a_new_job_into_relay_legs(): void
     {
         $job = DeliveryJob::factory()->create([
