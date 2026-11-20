@@ -229,6 +229,43 @@ class ListDeliveryJobsTest extends TestCase
         $this->assertStringNotContainsString('029 2018 0000', $body);
     }
 
+    #[DataProvider('everyRoleThatCanViewJobs')]
+    public function test_every_role_that_can_view_jobs_is_told_when_a_job_is_a_bereavement(string $role): void
+    {
+        Carbon::setTestNow('2026-08-29 10:00:00');
+        DeliveryJob::factory()->bereavement()->create(['reference' => 'JB-1100']);
+        Carbon::setTestNow('2026-08-29 11:00:00');
+        DeliveryJob::factory()->milk()->create(['reference' => 'JB-1101']);
+        Carbon::setTestNow('2026-08-29 12:00:00');
+        DeliveryJob::factory()->create(['reference' => 'JB-1102']);
+
+        $this->fakeDirectory($this->volunteer($role));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.reference', 'JB-1102')
+            ->assertJsonPath('data.0.isBereavement', false)
+            ->assertJsonPath('data.1.reference', 'JB-1101')
+            ->assertJsonPath('data.1.isBereavement', false)
+            ->assertJsonPath('data.2.reference', 'JB-1100')
+            ->assertJsonPath('data.2.isBereavement', true);
+    }
+
+    /**
+     * @return array<string, array{string}>
+     */
+    public static function everyRoleThatCanViewJobs(): array
+    {
+        return [
+            'controller' => ['Controller'],
+            'rider' => ['Rider'],
+            'driver' => ['Driver'],
+            'trustee' => ['Trustee'],
+        ];
+    }
+
     /**
      * @return array<string, array{string}>
      */

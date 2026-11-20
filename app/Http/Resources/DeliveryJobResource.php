@@ -35,6 +35,8 @@ class DeliveryJobResource extends JsonResource
             'status' => $this->status->value,
             'jobType' => $this->job_type->value,
             'milkLitres' => $this->milk_litres,
+            // Deliberately not role-gated: every role that can view jobs is told so they can be sensitive. The mother's contact below is the gated part.
+            'isBereavement' => $this->is_bereavement,
             'isRelay' => $isRelay,
             'parentJobId' => $this->parent_job_id,
             'legNumber' => $this->leg_number,

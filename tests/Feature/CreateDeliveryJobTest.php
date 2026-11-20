@@ -359,6 +359,133 @@ class CreateDeliveryJobTest extends TestCase
         $this->assertSame(0, DeliveryJob::query()->count());
     }
 
+    public function test_a_bereavement_milk_job_is_stored_and_returned(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'isBereavement' => true])
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'milk')
+            ->assertJsonPath('isBereavement', true);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'job_type' => 'milk',
+            'is_bereavement' => true,
+        ]);
+    }
+
+    public function test_an_admin_can_create_a_bereavement_milk_job(): void
+    {
+        User::factory()->admin()->create([
+            'email' => 'rider@bloodbikes.wales',
+            'google_id' => null,
+        ]);
+
+        Http::fake([
+            'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => []]),
+        ]);
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'isBereavement' => true])
+            ->assertCreated()
+            ->assertJsonPath('isBereavement', true);
+    }
+
+    #[DataProvider('bereavementOffProvider')]
+    public function test_a_milk_job_is_not_a_bereavement_unless_asked(bool $send, mixed $value): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->milkPayload();
+        if ($send) {
+            $payload['isBereavement'] = $value;
+        }
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('isBereavement', false);
+
+        $this->assertDatabaseHas('delivery_jobs', ['reference' => 'JB-0001', 'is_bereavement' => false]);
+    }
+
+    /**
+     * @return array<string, array{bool, mixed}>
+     */
+    public static function bereavementOffProvider(): array
+    {
+        return [
+            'omitted' => [false, null],
+            'false' => [true, false],
+            'null' => [true, null],
+            'blank' => [true, ''],
+            'zero' => [true, 0],
+        ];
+    }
+
+    public function test_an_omitted_flag_on_a_standard_job_defaults_to_false(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'standard')
+            ->assertJsonPath('isBereavement', false);
+
+        $this->assertDatabaseHas('delivery_jobs', ['reference' => 'JB-0001', 'is_bereavement' => false]);
+    }
+
+    public function test_an_explicit_false_on_a_standard_job_is_accepted(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'standard', 'isBereavement' => false])
+            ->assertCreated()
+            ->assertJsonPath('isBereavement', false);
+    }
+
+    public function test_a_bereavement_on_a_standard_job_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'standard', 'isBereavement' => true])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['isBereavement'])
+            ->assertJson(['errors' => ['isBereavement' => ['Bereavement can only be recorded for milk jobs.']]]);
+
+        // The deployed SPA sends no jobType at all, which means standard.
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'isBereavement' => true])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['isBereavement']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_non_boolean_bereavement_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->milkPayload(), 'isBereavement' => 'maybe'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['isBereavement']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
     #[DataProvider('invalidPhoneProvider')]
     public function test_an_invalid_mother_phone_is_rejected(?string $phone): void
     {

@@ -27,6 +27,7 @@ class StoreDeliveryJobRequest extends FormRequest
 
         $this->merge([
             'jobType' => $this->normaliseJobType($this->input('jobType')),
+            'isBereavement' => $this->normaliseBereavement($this->input('isBereavement')),
             'sender' => $this->normaliseSender($this->arrayInput('sender')),
             'mother' => $this->normaliseMother($this->input('mother')),
             'collection' => $this->normaliseLocation($this->arrayInput('collection')),
@@ -56,6 +57,10 @@ class StoreDeliveryJobRequest extends FormRequest
                 'max:'.JobType::MAX_MILK_LITRES,
                 'decimal:0,2',
             ],
+            // Only a milk job can be a bereavement; on any other type the flag may only be false.
+            'isBereavement' => $jobType === JobType::Milk->value
+                ? ['boolean']
+                : ['boolean', 'declined'],
             'sender' => ['required', 'array'],
             'sender.name' => ['required', 'string', 'max:255'],
             'sender.phone' => ['required', 'string', 'max:50', new UkPhoneNumber],
@@ -101,6 +106,7 @@ class StoreDeliveryJobRequest extends FormRequest
             'milkLitres.gt' => 'Litres must be greater than 0.',
             'milkLitres.max' => 'Litres must not be more than '.JobType::MAX_MILK_LITRES.'.',
             'milkLitres.decimal' => 'Litres can have at most 2 decimal places.',
+            'isBereavement.declined' => 'Bereavement can only be recorded for milk jobs.',
             'mother.prohibited' => "A mother's contact can only be recorded for milk jobs.",
             'mother.name.required' => "Enter the mother's name.",
             'mother.phone.required' => "Enter the mother's phone number.",
@@ -213,6 +219,18 @@ class StoreDeliveryJobRequest extends FormRequest
         }
 
         return is_string($value) ? trim($value) : $value;
+    }
+
+    /**
+     * Omitted or blank means not a bereavement. Anything else is left for the `boolean` rule to judge.
+     */
+    private function normaliseBereavement(mixed $value): mixed
+    {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return false;
+        }
+
+        return $value;
     }
 
     private function normaliseEstimate(mixed $value): mixed

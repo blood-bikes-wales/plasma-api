@@ -63,6 +63,11 @@ class DeliveryJobFactory extends Factory
         ]);
     }
 
+    public function bereavement(): static
+    {
+        return $this->milk()->state(['is_bereavement' => true]);
+    }
+
     public function allocated(): static
     {
         return $this->state(['status' => JobStatus::Allocated]);
