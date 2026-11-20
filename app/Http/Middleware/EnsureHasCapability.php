@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Authorization\Capability;
-use App\Authorization\CapabilityMatrix;
 use App\Authorization\RequestRoles;
 use Closure;
 use Illuminate\Http\Request;
@@ -28,21 +27,10 @@ class EnsureHasCapability
             throw new InvalidArgumentException("Unknown capability [{$capability}].");
         }
 
-        if (! $this->allows($request, $required)) {
+        if (! RequestRoles::hasCapability($request, $required)) {
             return response()->json(['message' => 'Forbidden.'], 403);
         }
 
         return $next($request);
-    }
-
-    private function allows(Request $request, Capability $capability): bool
-    {
-        $allowed = collect(CapabilityMatrix::roles($capability))
-            ->map(static fn ($role): string => $role->value);
-
-        return collect(RequestRoles::expanded($request))
-            ->map(static fn ($role): string => $role->value)
-            ->intersect($allowed)
-            ->isNotEmpty();
     }
 }

@@ -21,6 +21,27 @@ final class RequestRoles
     }
 
     /**
+     * Whether any of the caller's expanded roles holds the capability.
+     *
+     * Reads roles already attached to the request, so it never queries.
+     */
+    public static function hasCapability(Request $request, Capability $capability): bool
+    {
+        $allowed = array_map(
+            static fn (Role $role): string => $role->value,
+            CapabilityMatrix::roles($capability),
+        );
+
+        foreach (self::expanded($request) as $role) {
+            if (in_array($role->value, $allowed, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return list<Role>
      */
     public static function assigned(Request $request): array

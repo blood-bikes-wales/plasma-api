@@ -54,7 +54,13 @@ class DeliveryJobFactory extends Factory
 
     public function milk(float $litres = 2.5): static
     {
-        return $this->state(['job_type' => JobType::Milk, 'milk_litres' => $litres]);
+        return $this->state([
+            'job_type' => JobType::Milk,
+            'milk_litres' => $litres,
+            'mother_name' => 'Megan Evans',
+            'mother_phone' => '07700 900101',
+            'mother_phone_secondary' => '029 2018 0000',
+        ]);
     }
 
     public function allocated(): static

@@ -121,6 +121,44 @@ class RelayDeliveryJobTest extends TestCase
             ->count());
     }
 
+    public function test_relay_legs_inherit_the_mothers_contact_of_a_milk_job(): void
+    {
+        $job = DeliveryJob::factory()->milk(2.5)->create(['reference' => 'JB-0207']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $mother = [
+            'name' => 'Megan Evans',
+            'phone' => '07700 900101',
+            'secondaryPhone' => '029 2018 0000',
+        ];
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0007',
+                        'address' => 'Services, M4 Junction 32',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('mother', $mother)
+            ->assertJsonPath('legs.0.mother', $mother)
+            ->assertJsonPath('legs.1.mother', $mother);
+
+        $this->assertSame(2, DeliveryJob::query()
+            ->where('parent_job_id', $job->id)
+            ->where('mother_name', 'Megan Evans')
+            ->where('mother_phone', '07700 900101')
+            ->where('mother_phone_secondary', '029 2018 0000')
+            ->count());
+    }
+
     public function test_relay_legs_of_a_standard_job_stay_standard_without_litres(): void
     {
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0206']);
@@ -143,8 +181,10 @@ class RelayDeliveryJobTest extends TestCase
             ->assertOk()
             ->assertJsonPath('legs.0.jobType', 'standard')
             ->assertJsonPath('legs.0.milkLitres', null)
+            ->assertJsonPath('legs.0.mother', null)
             ->assertJsonPath('legs.1.jobType', 'standard')
-            ->assertJsonPath('legs.1.milkLitres', null);
+            ->assertJsonPath('legs.1.milkLitres', null)
+            ->assertJsonPath('legs.1.mother', null);
     }
 
     public function test_a_relay_stores_the_arrival_time_on_each_leg_that_delivers_to_a_rendezvous(): void

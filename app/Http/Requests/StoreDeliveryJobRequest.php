@@ -28,6 +28,7 @@ class StoreDeliveryJobRequest extends FormRequest
         $this->merge([
             'jobType' => $this->normaliseJobType($this->input('jobType')),
             'sender' => $this->normaliseSender($this->arrayInput('sender')),
+            'mother' => $this->normaliseMother($this->input('mother')),
             'collection' => $this->normaliseLocation($this->arrayInput('collection')),
             'delivery' => $this->normaliseLocation($this->arrayInput('delivery')),
             'contents' => $this->input('contents'),
@@ -59,6 +60,14 @@ class StoreDeliveryJobRequest extends FormRequest
             'sender.name' => ['required', 'string', 'max:255'],
             'sender.phone' => ['required', 'string', 'max:50', new UkPhoneNumber],
             'sender.organisation' => ['nullable', 'string', 'max:255'],
+            'mother' => [
+                Rule::prohibitedIf($jobType !== JobType::Milk->value),
+                'nullable',
+                'array',
+            ],
+            'mother.name' => [Rule::requiredIf($jobType === JobType::Milk->value), 'nullable', 'string', 'max:255'],
+            'mother.phone' => [Rule::requiredIf($jobType === JobType::Milk->value), 'nullable', 'string', 'max:50', new UkPhoneNumber],
+            'mother.secondaryPhone' => ['nullable', 'string', 'max:50', new UkPhoneNumber],
             'collection' => ['required', 'array'],
             'collection.placeId' => ['required', 'string', 'max:255'],
             'collection.address' => ['required', 'string', 'max:500'],
@@ -92,6 +101,9 @@ class StoreDeliveryJobRequest extends FormRequest
             'milkLitres.gt' => 'Litres must be greater than 0.',
             'milkLitres.max' => 'Litres must not be more than '.JobType::MAX_MILK_LITRES.'.',
             'milkLitres.decimal' => 'Litres can have at most 2 decimal places.',
+            'mother.prohibited' => "A mother's contact can only be recorded for milk jobs.",
+            'mother.name.required' => "Enter the mother's name.",
+            'mother.phone.required' => "Enter the mother's phone number.",
             'collection.placeId.required' => 'Collection location must include a Google Place ID.',
             'collection.address.required' => 'Collection location must include an address.',
             'collection.latitude.required' => 'Collection location must include coordinates.',
@@ -130,6 +142,22 @@ class StoreDeliveryJobRequest extends FormRequest
             'name' => $sender['name'] ?? null,
             'phone' => $sender['phone'] ?? $sender['contactNumber'] ?? $sender['contact_number'] ?? null,
             'organisation' => $sender['organisation'] ?? $sender['organization'] ?? null,
+        ];
+    }
+
+    /**
+     * A non-array value is left alone so the `array` rule rejects it.
+     */
+    private function normaliseMother(mixed $mother): mixed
+    {
+        if (! is_array($mother)) {
+            return $mother;
+        }
+
+        return [
+            'name' => $mother['name'] ?? null,
+            'phone' => $mother['phone'] ?? null,
+            'secondaryPhone' => $mother['secondaryPhone'] ?? $mother['secondary_phone'] ?? null,
         ];
     }
 
