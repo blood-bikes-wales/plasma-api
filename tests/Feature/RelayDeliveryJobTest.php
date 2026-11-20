@@ -697,6 +697,50 @@ class RelayDeliveryJobTest extends TestCase
         $this->assertSame($small, $countQueries());
     }
 
+    #[DataProvider('finishedRelayStatuses')]
+    public function test_a_finished_relay_cannot_be_cancelled_again_and_is_left_untouched(JobStatus $status): void
+    {
+        $recordedAt = now()->subHours(30)->startOfSecond();
+        $parent = DeliveryJob::factory()->create([
+            'reference' => 'JB-0300',
+            'status' => $status,
+            'cancelled_at' => $status === JobStatus::Cancelled ? $recordedAt : null,
+            'cancellation_reason' => $status === JobStatus::Cancelled ? 'Original reason' : null,
+            'updated_at' => $recordedAt,
+        ]);
+        DeliveryJob::factory()->create([
+            'status' => $status,
+            'parent_job_id' => $parent->id,
+            'leg_number' => 1,
+            'updated_at' => $recordedAt,
+        ]);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$parent->id}/cancel", ['reason' => 'Changed my mind'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('action');
+
+        // Completed jobs are not edited, so updated_at stays the time the completion was recorded.
+        $parent->refresh();
+        $this->assertSame($status, $parent->status);
+        $this->assertTrue($parent->updated_at->equalTo($recordedAt));
+        $this->assertSame($status === JobStatus::Cancelled ? 'Original reason' : null, $parent->cancellation_reason);
+    }
+
+    /**
+     * @return array<string, array{JobStatus}>
+     */
+    public static function finishedRelayStatuses(): array
+    {
+        return [
+            'delivered' => [JobStatus::Delivered],
+            'cancelled' => [JobStatus::Cancelled],
+        ];
+    }
+
     public function test_the_relay_and_cancel_responses_report_blocked_legs_without_extra_queries(): void
     {
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0230']);

@@ -13,6 +13,7 @@ use App\Models\ServiceArea;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -55,8 +56,8 @@ final class DeliveryJobService
                 'delivery_place_id' => $deliveryPlace->id,
                 'collection_notes' => $this->normaliseOptionalText($collection['notes'] ?? null),
                 'delivery_notes' => $this->normaliseOptionalText($delivery['notes'] ?? null),
-                'estimated_collection_at' => $this->parseTimestamp($payload['estimatedCollectionAt'] ?? null)?->utc(),
-                'estimated_delivery_at' => $this->parseTimestamp($payload['estimatedDeliveryAt'] ?? null)?->utc(),
+                'estimated_collection_at' => $this->parseTimestamp($payload['estimatedCollectionAt'] ?? null),
+                'estimated_delivery_at' => $this->parseTimestamp($payload['estimatedDeliveryAt'] ?? null),
                 'contents' => $payload['contents'],
                 'created_by_user_id' => $actor->id,
             ]);
@@ -74,27 +75,104 @@ final class DeliveryJobService
     }
 
     /**
+     * Relations the list and detail endpoints render a job with, so both return the same shape.
+     * The resource reads each of these, so they are always eager loaded.
+     *
+     * @var list<string>
+     */
+    private const array JOB_RELATIONS = [
+        'legs.collectionPlace',
+        'legs.deliveryPlace',
+        'legs.serviceAreas',
+        'legs.operationalShift.rider',
+        'collectionPlace',
+        'deliveryPlace',
+        'serviceAreas',
+        'operationalShift.rider',
+    ];
+
+    /**
+     * Completed jobs are listed for 24 hours after they finish unless the caller asks for all of them.
+     */
+    public const int RECENT_COMPLETED_HOURS = 24;
+
+    /**
+     * Top-level jobs (relay legs are nested under their parent) in a scope, newest first.
+     *
+     * For the Completed scope, $includeOlderCompleted = false keeps only jobs completed within
+     * the last RECENT_COMPLETED_HOURS. A relay parent is filtered as one job: its legs always
+     * come with it, whatever their own times are.
+     *
      * @return Collection<int, DeliveryJob>
      */
-    public function listByScope(JobScope $scope): Collection
+    public function listByScope(JobScope $scope, bool $includeOlderCompleted = true): Collection
     {
-        return DeliveryJob::query()
+        $query = DeliveryJob::query()
             ->topLevel()
             ->whereIn('status', $scope->statuses())
-            ->with([
-                'legs.collectionPlace',
-                'legs.deliveryPlace',
-                'legs.serviceAreas',
-                'legs.operationalShift.rider',
-                'collectionPlace',
-                'deliveryPlace',
-                'serviceAreas',
-                'operationalShift.rider',
-            ])
+            ->with(self::JOB_RELATIONS);
+
+        if ($scope === JobScope::Completed && ! $includeOlderCompleted) {
+            $this->wherePastDay($query);
+        }
+
+        return $query
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->get()
             ->each(static fn (DeliveryJob $job): DeliveryJob => $job->linkLegsToParent());
+    }
+
+    /**
+     * One job (a top-level job or a relay leg) by id, never age-filtered, loaded exactly as the
+     * lists load it so the resource renders the same fields and queries nothing per row.
+     */
+    public function find(DeliveryJob $job): DeliveryJob
+    {
+        if ($job->parent_job_id !== null) {
+            // A leg: its siblings (via the parent) drive waitingForLeg and the allowed actions.
+            return $job->load([
+                'collectionPlace',
+                'deliveryPlace',
+                'serviceAreas',
+                'operationalShift.rider',
+                'parentJob.legs',
+            ]);
+        }
+
+        return $job->load(self::JOB_RELATIONS)->linkLegsToParent();
+    }
+
+    /**
+     * Keep jobs that completed in the last 24 hours: delivered_at for a Delivered job and
+     * cancelled_at for a Cancelled one, OR updated_at.
+     *
+     * delivered_at / cancelled_at are what the client claims (the SPA sends the job's created day
+     * plus the typed time), so a job created Monday 22:00 and delivered Tuesday 02:00 arrives
+     * claiming Monday 02:00, already a day old when it was recorded. updated_at is the time the
+     * server recorded the completion: Delivered and Cancelled are terminal, nothing edits a job
+     * afterwards, so it stops moving. Either being recent is enough, so this can only show more
+     * and never hides a delivery that was just recorded. It is also the fallback for a relay
+     * parent, whose status is rolled up from its legs and which never gets delivered_at.
+     *
+     * Three ranges ORed (updated_at, delivered_at for Delivered, cancelled_at for Cancelled), each served by
+     * its own single-column index and combined with a bitmap OR. A COALESCE(...) across the columns could not use any.
+     *
+     * @param  Builder<DeliveryJob>  $query
+     */
+    private function wherePastDay(Builder $query): void
+    {
+        $since = now()->subHours(self::RECENT_COMPLETED_HOURS);
+
+        $query->where(function (Builder $query) use ($since): void {
+            $query->where('updated_at', '>=', $since)
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('status', JobStatus::Delivered)
+                    ->where('delivered_at', '>=', $since))
+                ->orWhere(fn (Builder $query) => $query
+                    ->where('status', JobStatus::Cancelled)
+                    ->where('cancelled_at', '>=', $since));
+        });
     }
 
     /**
@@ -231,11 +309,13 @@ final class DeliveryJobService
         return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
             $locked = $this->lockJob($job->id);
 
+            // Also for a relay parent: a finished relay must not be cancelled (or re-cancelled) afterwards, which
+            // would rewrite its status and bump updated_at, the server-recorded completion time the 24 hour list uses.
+            $this->assertActionAllowed($locked, JobAction::Cancel);
+
             if ($locked->isRelayParent()) {
                 return $this->cancelRelayParent($actor, $locked, $payload);
             }
-
-            $this->assertActionAllowed($locked, JobAction::Cancel);
 
             $locked->fill([
                 'status' => JobStatus::Cancelled,
@@ -366,7 +446,7 @@ final class DeliveryJobService
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
                 // Only rendezvous points carry arrivesAt, so the last leg (to the final delivery) stays null.
-                'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null)?->utc(),
+                'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null),
                 'contents' => $parent->contents,
                 'created_by_user_id' => $actor->id,
             ]);
@@ -595,7 +675,8 @@ final class DeliveryJobService
             return null;
         }
 
-        return Carbon::parse($value);
+        // Normalise to UTC so an offset such as +01:00 is stored as the same instant, not as its wall-clock digits.
+        return Carbon::parse($value)->utc();
     }
 
     private function nextReference(): string
