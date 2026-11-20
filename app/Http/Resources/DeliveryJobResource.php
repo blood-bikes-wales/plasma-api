@@ -52,6 +52,8 @@ class DeliveryJobResource extends JsonResource
                 'longitude' => $delivery?->longitude,
                 'notes' => $this->delivery_notes,
             ],
+            'estimatedCollectionAt' => $this->estimated_collection_at?->toIso8601String(),
+            'estimatedDeliveryAt' => $this->estimated_delivery_at?->toIso8601String(),
             'contents' => $this->contents,
             'serviceAreas' => $this->whenLoaded(
                 'serviceAreas',

@@ -44,6 +44,8 @@ final class DeliveryJobService
                 'delivery_place_id' => $deliveryPlace->id,
                 'collection_notes' => $this->normaliseOptionalText($collection['notes'] ?? null),
                 'delivery_notes' => $this->normaliseOptionalText($delivery['notes'] ?? null),
+                'estimated_collection_at' => $this->parseTimestamp($payload['estimatedCollectionAt'] ?? null)?->utc(),
+                'estimated_delivery_at' => $this->parseTimestamp($payload['estimatedDeliveryAt'] ?? null)?->utc(),
                 'contents' => $payload['contents'],
                 'created_by_user_id' => $actor->id,
             ]);

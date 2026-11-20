@@ -250,6 +250,94 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('delivery.notes', str_repeat('b', 500));
     }
 
+    public function test_a_job_with_one_estimate_stores_that_estimate_and_leaves_the_other_null(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['estimatedCollectionAt'] = '2026-11-20T09:30:00.000Z';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('estimatedCollectionAt', '2026-11-20T09:30:00+00:00')
+            ->assertJsonPath('estimatedDeliveryAt', null);
+
+        $job = DeliveryJob::query()->where('reference', 'JB-0001')->firstOrFail();
+        $this->assertSame('2026-11-20 09:30:00', $job->estimated_collection_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertNull($job->estimated_delivery_at);
+        $this->assertNull($job->collected_at);
+        $this->assertNull($job->delivered_at);
+    }
+
+    public function test_a_job_with_both_estimates_stores_both_in_utc(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['estimatedCollectionAt'] = '2026-06-20T10:30:00+01:00';
+        $payload['estimatedDeliveryAt'] = '2026-06-20T12:00:00+01:00';
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('estimatedCollectionAt', '2026-06-20T09:30:00+00:00')
+            ->assertJsonPath('estimatedDeliveryAt', '2026-06-20T11:00:00+00:00');
+    }
+
+    public function test_a_job_with_no_estimates_leaves_both_columns_null(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('estimatedCollectionAt', null)
+            ->assertJsonPath('estimatedDeliveryAt', null);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'estimated_collection_at' => null,
+            'estimated_delivery_at' => null,
+        ]);
+    }
+
+    public function test_blank_or_null_estimates_are_stored_as_null(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['estimatedCollectionAt'] = '';
+        $payload['estimatedDeliveryAt'] = null;
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertCreated()
+            ->assertJsonPath('estimatedCollectionAt', null)
+            ->assertJsonPath('estimatedDeliveryAt', null);
+    }
+
+    public function test_an_invalid_estimate_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $payload = $this->validPayload();
+        $payload['estimatedCollectionAt'] = 'half past nine';
+        $payload['estimatedDeliveryAt'] = ['2026-11-20T09:30:00Z'];
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['estimatedCollectionAt', 'estimatedDeliveryAt']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
     #[DataProvider('validPhoneProvider')]
     public function test_valid_uk_phone_numbers_are_accepted_as_typed(string $phone): void
     {

@@ -29,6 +29,8 @@ class StoreDeliveryJobRequest extends FormRequest
             'delivery' => $this->normaliseLocation($this->arrayInput('delivery')),
             'contents' => $this->input('contents'),
             'serviceAreas' => $serviceAreas,
+            'estimatedCollectionAt' => $this->normaliseEstimate($this->input('estimatedCollectionAt')),
+            'estimatedDeliveryAt' => $this->normaliseEstimate($this->input('estimatedDeliveryAt')),
         ]);
     }
 
@@ -57,6 +59,8 @@ class StoreDeliveryJobRequest extends FormRequest
             'contents' => ['required', 'string', 'max:2000'],
             'serviceAreas' => ['required', 'array', 'min:1'],
             'serviceAreas.*' => ['required', 'string', 'max:16', new ActiveServiceAreaCode],
+            'estimatedCollectionAt' => ['nullable', 'date'],
+            'estimatedDeliveryAt' => ['nullable', 'date'],
         ];
     }
 
@@ -135,5 +139,16 @@ class StoreDeliveryJobRequest extends FormRequest
         $notes = trim($notes);
 
         return $notes === '' ? null : $notes;
+    }
+
+    private function normaliseEstimate(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 }
