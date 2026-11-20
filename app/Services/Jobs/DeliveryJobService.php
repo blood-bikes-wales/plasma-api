@@ -328,6 +328,8 @@ final class DeliveryJobService
                 'sender_organisation' => $parent->sender_organisation,
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
+                // Only rendezvous points carry arrivesAt, so the last leg (to the final delivery) stays null.
+                'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null)?->utc(),
                 'contents' => $parent->contents,
                 'created_by_user_id' => $actor->id,
             ]);
