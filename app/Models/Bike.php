@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 
 #[Fillable([
     'registration',
@@ -50,6 +52,33 @@ class Bike extends Model
     public function operationalShifts(): HasMany
     {
         return $this->hasMany(OperationalShift::class);
+    }
+
+    /**
+     * The most recently finished shift on this bike. Shifts logged on without a
+     * bike have no bike_id, so they never count.
+     *
+     * Not `ofMany()`: Laravel always adds max(id) to it and PostgreSQL has no
+     * max(uuid). The correlated subquery picks the newest logged_off_at, with
+     * the id as a (arbitrary but stable) tie-break, and still eager loads in a
+     * single query.
+     *
+     * @return HasOne<OperationalShift, $this>
+     */
+    public function latestLoggedOffShift(): HasOne
+    {
+        return $this->hasOne(OperationalShift::class)->where(
+            'operational_shifts.id',
+            static function (QueryBuilder $query): void {
+                $query->select('latest.id')
+                    ->from('operational_shifts as latest')
+                    ->whereColumn('latest.bike_id', 'operational_shifts.bike_id')
+                    ->whereNotNull('latest.logged_off_at')
+                    ->orderByDesc('latest.logged_off_at')
+                    ->orderByDesc('latest.id')
+                    ->limit(1);
+            },
+        );
     }
 
     /**
