@@ -30,6 +30,8 @@ class DeliveryJobResource extends JsonResource
             'id' => $this->id,
             'reference' => $this->reference,
             'status' => $this->status->value,
+            'jobType' => $this->job_type->value,
+            'milkLitres' => $this->milk_litres,
             'isRelay' => $isRelay,
             'parentJobId' => $this->parent_job_id,
             'legNumber' => $this->leg_number,
