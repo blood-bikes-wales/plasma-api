@@ -41,6 +41,8 @@ class RelayDeliveryJobTest extends TestCase
             'reference' => 'JB-0200',
             'collection_notes' => 'path lab',
             'delivery_notes' => 'reception outside',
+            'estimated_collection_at' => '2026-11-20 09:30:00',
+            'estimated_delivery_at' => '2026-11-20 11:00:00',
         ]);
 
         $this->fakeDirectory($this->volunteer('Controller'));
@@ -71,7 +73,13 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.collection.notes', null)
             ->assertJsonPath('legs.0.delivery.notes', null)
             ->assertJsonPath('legs.1.collection.notes', null)
-            ->assertJsonPath('legs.1.delivery.notes', null);
+            ->assertJsonPath('legs.1.delivery.notes', null)
+            ->assertJsonPath('estimatedCollectionAt', '2026-11-20T09:30:00+00:00')
+            ->assertJsonPath('estimatedDeliveryAt', '2026-11-20T11:00:00+00:00')
+            ->assertJsonPath('legs.0.estimatedCollectionAt', null)
+            ->assertJsonPath('legs.0.estimatedDeliveryAt', null)
+            ->assertJsonPath('legs.1.estimatedCollectionAt', null)
+            ->assertJsonPath('legs.1.estimatedDeliveryAt', null);
 
         $this->assertTrue($job->fresh()->isRelayParent());
         $this->assertSame(3, DeliveryJob::query()->count());

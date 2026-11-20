@@ -54,6 +54,24 @@ class ListDeliveryJobsTest extends TestCase
             ->assertJsonPath('data.0.status', JobStatus::New->value);
     }
 
+    public function test_a_rider_sees_estimated_times_on_listed_jobs(): void
+    {
+        DeliveryJob::factory()->create([
+            'reference' => 'JB-1042',
+            'estimated_collection_at' => '2026-11-20 09:30:00',
+            'estimated_delivery_at' => null,
+        ]);
+
+        $this->fakeDirectory($this->volunteer('Rider'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->getJson('/api/jobs/active')
+            ->assertOk()
+            ->assertJsonPath('data.0.estimatedCollectionAt', '2026-11-20T09:30:00+00:00')
+            ->assertJsonPath('data.0.estimatedDeliveryAt', null);
+    }
+
     public function test_active_scope_returns_in_progress_jobs_newest_first(): void
     {
         Carbon::setTestNow('2026-08-29 10:00:00');
