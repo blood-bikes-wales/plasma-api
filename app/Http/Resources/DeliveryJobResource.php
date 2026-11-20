@@ -54,6 +54,7 @@ class DeliveryJobResource extends JsonResource
             ],
             'estimatedCollectionAt' => $this->estimated_collection_at?->toIso8601String(),
             'estimatedDeliveryAt' => $this->estimated_delivery_at?->toIso8601String(),
+            'plannedArrivalAt' => $this->planned_arrival_at?->toIso8601String(),
             'contents' => $this->contents,
             'serviceAreas' => $this->whenLoaded(
                 'serviceAreas',

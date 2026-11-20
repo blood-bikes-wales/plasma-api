@@ -37,6 +37,7 @@ class RelayDeliveryJobRequest extends FormRequest
             'rendezvousPoints.*.address' => ['required', 'string', 'max:500'],
             'rendezvousPoints.*.latitude' => ['required', 'numeric', 'between:-90,90'],
             'rendezvousPoints.*.longitude' => ['required', 'numeric', 'between:-180,180'],
+            'rendezvousPoints.*.arrivesAt' => ['required', 'date'],
         ];
     }
 
@@ -52,6 +53,8 @@ class RelayDeliveryJobRequest extends FormRequest
             'rendezvousPoints.*.address.required' => 'Each rendezvous point must include an address.',
             'rendezvousPoints.*.latitude.required' => 'Each rendezvous point must include coordinates.',
             'rendezvousPoints.*.longitude.required' => 'Each rendezvous point must include coordinates.',
+            'rendezvousPoints.*.arrivesAt.required' => 'Each rendezvous point must include an arrival time.',
+            'rendezvousPoints.*.arrivesAt.date' => 'Each rendezvous arrival time must be a valid date and time.',
         ];
     }
 
@@ -66,6 +69,7 @@ class RelayDeliveryJobRequest extends FormRequest
             'address' => $location['address'] ?? null,
             'latitude' => $location['latitude'] ?? $location['lat'] ?? null,
             'longitude' => $location['longitude'] ?? $location['lng'] ?? $location['lon'] ?? null,
+            'arrivesAt' => $location['arrivesAt'] ?? $location['arrives_at'] ?? null,
         ];
     }
 }

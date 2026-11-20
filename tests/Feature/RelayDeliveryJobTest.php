@@ -56,6 +56,7 @@ class RelayDeliveryJobTest extends TestCase
                         'address' => 'Services, M4 Junction 32',
                         'latitude' => 51.54,
                         'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
                     ],
                 ],
             ]);
@@ -85,6 +86,86 @@ class RelayDeliveryJobTest extends TestCase
         $this->assertSame(3, DeliveryJob::query()->count());
     }
 
+    public function test_a_relay_stores_the_arrival_time_on_each_leg_that_delivers_to_a_rendezvous(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0210']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $response = $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0010',
+                        'address' => 'First handoff',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                    [
+                        'placeId' => 'ChIJRendezvous0011',
+                        'address' => 'Second handoff',
+                        'latitude' => 51.60,
+                        'longitude' => -3.20,
+                        'arrivesAt' => '2026-06-20T12:45:00+01:00',
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonCount(3, 'legs')
+            ->assertJsonPath('plannedArrivalAt', null)
+            ->assertJsonPath('legs.0.plannedArrivalAt', '2026-11-20T10:15:00+00:00')
+            ->assertJsonPath('legs.1.plannedArrivalAt', '2026-06-20T11:45:00+00:00')
+            ->assertJsonPath('legs.2.plannedArrivalAt', null);
+
+        $legs = DeliveryJob::query()->where('parent_job_id', $job->id)->orderBy('leg_number')->get();
+        $this->assertSame('2026-11-20 10:15:00', $legs[0]->planned_arrival_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-06-20 11:45:00', $legs[1]->planned_arrival_at?->utc()->format('Y-m-d H:i:s'));
+        $this->assertNull($legs[2]->planned_arrival_at);
+
+        foreach ($legs as $leg) {
+            $this->assertNull($leg->collected_at);
+            $this->assertNull($leg->delivered_at);
+        }
+        $this->assertNull($job->fresh()->planned_arrival_at);
+    }
+
+    public function test_every_rendezvous_point_must_include_a_valid_arrival_time(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0211']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $point = [
+            'placeId' => 'ChIJRendezvous0012',
+            'address' => 'Handoff',
+            'latitude' => 51.54,
+            'longitude' => -3.12,
+        ];
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [...$point, 'arrivesAt' => '2026-11-20T10:15:00+00:00'],
+                    $point,
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['rendezvousPoints.1.arrivesAt']);
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [[...$point, 'arrivesAt' => 'not-a-time']],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['rendezvousPoints.0.arrivesAt']);
+
+        $this->assertFalse($job->fresh()->isRelayParent());
+    }
+
     public function test_relay_legs_run_independent_lifecycle_and_aggregate_parent_status(): void
     {
         $bike = Bike::factory()->create();
@@ -111,6 +192,7 @@ class RelayDeliveryJobTest extends TestCase
                     'address' => 'Handoff car park',
                     'latitude' => 51.49,
                     'longitude' => -3.15,
+                    'arrivesAt' => '2026-11-20T10:15:00+00:00',
                 ]],
             ])
             ->assertOk();
@@ -169,6 +251,7 @@ class RelayDeliveryJobTest extends TestCase
                     'address' => 'Relay point',
                     'latitude' => 51.48,
                     'longitude' => -3.18,
+                    'arrivesAt' => '2026-11-20T10:15:00+00:00',
                 ]],
             ])
             ->assertOk();
@@ -196,6 +279,7 @@ class RelayDeliveryJobTest extends TestCase
                     'address' => 'Relay point',
                     'latitude' => 51.48,
                     'longitude' => -3.18,
+                    'arrivesAt' => '2026-11-20T10:15:00+00:00',
                 ]],
             ])
             ->assertUnprocessable()
