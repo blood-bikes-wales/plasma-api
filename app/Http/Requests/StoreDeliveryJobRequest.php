@@ -2,9 +2,11 @@
 
 namespace App\Http\Requests;
 
+use App\Enums\JobType;
 use App\Rules\ActiveServiceAreaCode;
 use App\Rules\UkPhoneNumber;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class StoreDeliveryJobRequest extends FormRequest
 {
@@ -24,6 +26,7 @@ class StoreDeliveryJobRequest extends FormRequest
         }
 
         $this->merge([
+            'jobType' => $this->normaliseJobType($this->input('jobType')),
             'sender' => $this->normaliseSender($this->arrayInput('sender')),
             'collection' => $this->normaliseLocation($this->arrayInput('collection')),
             'delivery' => $this->normaliseLocation($this->arrayInput('delivery')),
@@ -39,7 +42,19 @@ class StoreDeliveryJobRequest extends FormRequest
      */
     public function rules(): array
     {
+        $jobType = $this->input('jobType');
+
         return [
+            'jobType' => ['required', Rule::enum(JobType::class)],
+            'milkLitres' => [
+                Rule::requiredIf($jobType === JobType::Milk->value),
+                Rule::prohibitedIf($jobType === JobType::Standard->value),
+                'nullable',
+                'numeric',
+                'gt:0',
+                'max:'.JobType::MAX_MILK_LITRES,
+                'decimal:0,2',
+            ],
             'sender' => ['required', 'array'],
             'sender.name' => ['required', 'string', 'max:255'],
             'sender.phone' => ['required', 'string', 'max:50', new UkPhoneNumber],
@@ -72,6 +87,11 @@ class StoreDeliveryJobRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'milkLitres.required' => 'Enter how many litres of milk are being collected.',
+            'milkLitres.prohibited' => 'Litres can only be recorded for milk jobs.',
+            'milkLitres.gt' => 'Litres must be greater than 0.',
+            'milkLitres.max' => 'Litres must not be more than '.JobType::MAX_MILK_LITRES.'.',
+            'milkLitres.decimal' => 'Litres can have at most 2 decimal places.',
             'collection.placeId.required' => 'Collection location must include a Google Place ID.',
             'collection.address.required' => 'Collection location must include an address.',
             'collection.latitude.required' => 'Collection location must include coordinates.',
@@ -153,6 +173,18 @@ class StoreDeliveryJobRequest extends FormRequest
         $notes = trim($notes);
 
         return $notes === '' ? null : $notes;
+    }
+
+    /**
+     * The deployed SPA never sends jobType, so a missing or blank value means a standard job.
+     */
+    private function normaliseJobType(mixed $value): mixed
+    {
+        if ($value === null || (is_string($value) && trim($value) === '')) {
+            return JobType::Standard->value;
+        }
+
+        return is_string($value) ? trim($value) : $value;
     }
 
     private function normaliseEstimate(mixed $value): mixed

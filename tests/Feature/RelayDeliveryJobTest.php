@@ -86,6 +86,67 @@ class RelayDeliveryJobTest extends TestCase
         $this->assertSame(3, DeliveryJob::query()->count());
     }
 
+    public function test_relay_legs_inherit_the_job_type_and_litres_of_a_milk_job(): void
+    {
+        $job = DeliveryJob::factory()->milk(2.5)->create(['reference' => 'JB-0205']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0005',
+                        'address' => 'Services, M4 Junction 32',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('jobType', 'milk')
+            ->assertJsonPath('milkLitres', 2.5)
+            ->assertJsonCount(2, 'legs')
+            ->assertJsonPath('legs.0.jobType', 'milk')
+            ->assertJsonPath('legs.0.milkLitres', 2.5)
+            ->assertJsonPath('legs.1.jobType', 'milk')
+            ->assertJsonPath('legs.1.milkLitres', 2.5);
+
+        $this->assertSame(2, DeliveryJob::query()
+            ->where('parent_job_id', $job->id)
+            ->where('job_type', 'milk')
+            ->where('milk_litres', 2.5)
+            ->count());
+    }
+
+    public function test_relay_legs_of_a_standard_job_stay_standard_without_litres(): void
+    {
+        $job = DeliveryJob::factory()->create(['reference' => 'JB-0206']);
+
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson("/api/jobs/{$job->id}/relay", [
+                'rendezvousPoints' => [
+                    [
+                        'placeId' => 'ChIJRendezvous0006',
+                        'address' => 'Services, M4 Junction 32',
+                        'latitude' => 51.54,
+                        'longitude' => -3.12,
+                        'arrivesAt' => '2026-11-20T10:15:00+00:00',
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('legs.0.jobType', 'standard')
+            ->assertJsonPath('legs.0.milkLitres', null)
+            ->assertJsonPath('legs.1.jobType', 'standard')
+            ->assertJsonPath('legs.1.milkLitres', null);
+    }
+
     public function test_a_relay_stores_the_arrival_time_on_each_leg_that_delivers_to_a_rendezvous(): void
     {
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0210']);

@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\JobStatus;
+use App\Enums\JobType;
 use App\Models\DeliveryJob;
 use App\Models\Place;
 use App\Models\ServiceArea;
@@ -24,6 +25,7 @@ class DeliveryJobFactory extends Factory
         return [
             'reference' => 'JB-'.fake()->unique()->numberBetween(1000, 9999),
             'status' => JobStatus::New,
+            'job_type' => JobType::Standard,
             'sender_name' => fake()->name(),
             'sender_phone' => '029 2074 7747',
             'sender_organisation' => 'University Hospital of Wales',
@@ -48,6 +50,11 @@ class DeliveryJobFactory extends Factory
 
             $job->serviceAreas()->sync([$area->id]);
         });
+    }
+
+    public function milk(float $litres = 2.5): static
+    {
+        return $this->state(['job_type' => JobType::Milk, 'milk_litres' => $litres]);
     }
 
     public function allocated(): static

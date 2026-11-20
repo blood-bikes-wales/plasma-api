@@ -5,6 +5,7 @@ namespace App\Services\Jobs;
 use App\Enums\JobAction;
 use App\Enums\JobScope;
 use App\Enums\JobStatus;
+use App\Enums\JobType;
 use App\Models\DeliveryJob;
 use App\Models\OperationalShift;
 use App\Models\Place;
@@ -34,9 +35,13 @@ final class DeliveryJobService
             $collectionPlace = $this->upsertPlace($collection);
             $deliveryPlace = $this->upsertPlace($delivery);
 
+            $jobType = JobType::tryFrom((string) ($payload['jobType'] ?? '')) ?? JobType::Standard;
+
             $job = DeliveryJob::query()->create([
                 'reference' => $this->nextReference(),
                 'status' => JobStatus::New,
+                'job_type' => $jobType,
+                'milk_litres' => $jobType === JobType::Milk ? $payload['milkLitres'] : null,
                 'sender_name' => $sender['name'],
                 'sender_phone' => $sender['phone'],
                 'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
@@ -334,6 +339,8 @@ final class DeliveryJobService
                 'status' => JobStatus::New,
                 'parent_job_id' => $parent->id,
                 'leg_number' => $index + 1,
+                'job_type' => $parent->job_type,
+                'milk_litres' => $parent->milk_litres,
                 'sender_name' => $parent->sender_name,
                 'sender_phone' => $parent->sender_phone,
                 'sender_organisation' => $parent->sender_organisation,

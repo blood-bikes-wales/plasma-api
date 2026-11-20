@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Enums\JobStatus;
+use App\Enums\JobType;
 use App\Models\DeliveryJob;
 use App\Models\Place;
 use App\Models\User;
@@ -102,6 +103,170 @@ class CreateDeliveryJobTest extends TestCase
             ->postJson('/api/jobs', $this->validPayload())
             ->assertCreated()
             ->assertJsonPath('status', JobStatus::New->value);
+    }
+
+    public function test_omitting_job_type_creates_a_standard_job(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', $this->validPayload())
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'standard')
+            ->assertJsonPath('milkLitres', null);
+
+        $this->assertDatabaseHas('delivery_jobs', [
+            'reference' => 'JB-0001',
+            'job_type' => 'standard',
+            'milk_litres' => null,
+        ]);
+    }
+
+    public function test_a_blank_job_type_is_treated_as_standard(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => '', 'milkLitres' => null])
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'standard')
+            ->assertJsonPath('milkLitres', null);
+    }
+
+    public function test_a_milk_job_stores_and_returns_litres(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 2.5])
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'milk')
+            ->assertJsonPath('milkLitres', 2.5);
+
+        $job = DeliveryJob::query()->where('reference', 'JB-0001')->firstOrFail();
+        $this->assertSame(JobType::Milk, $job->job_type);
+        $this->assertSame(2.5, $job->milk_litres);
+    }
+
+    public function test_an_admin_can_create_a_milk_job(): void
+    {
+        User::factory()->admin()->create([
+            'email' => 'rider@bloodbikes.wales',
+            'google_id' => null,
+        ]);
+
+        Http::fake([
+            'www.3r.org.uk/directory.json*' => Http::response(['volunteers' => []]),
+        ]);
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 4])
+            ->assertCreated()
+            ->assertJsonPath('jobType', 'milk')
+            ->assertJsonPath('milkLitres', 4);
+    }
+
+    public function test_a_rider_cannot_create_a_milk_job(): void
+    {
+        $this->fakeDirectory($this->volunteer('Rider'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => 2.5])
+            ->assertForbidden();
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_milk_job_without_litres_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['milkLitres']);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => ''])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['milkLitres']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_a_standard_job_with_litres_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'standard', 'milkLitres' => 2.5])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['milkLitres']);
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'milkLitres' => 2.5])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['milkLitres']);
+
+        $this->assertSame(0, DeliveryJob::query()->count());
+    }
+
+    public function test_an_unknown_job_type_is_rejected(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'urgent'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['jobType']);
+    }
+
+    /**
+     * @param  array<string, mixed>|int|float|string  $litres
+     */
+    #[DataProvider('invalidMilkLitres')]
+    public function test_invalid_milk_litres_are_rejected(mixed $litres): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => $litres])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['milkLitres']);
+    }
+
+    /**
+     * @return array<string, array{0: mixed}>
+     */
+    public static function invalidMilkLitres(): array
+    {
+        return [
+            'zero' => [0],
+            'negative' => [-1],
+            'not a number' => ['lots'],
+            'over the limit' => [JobType::MAX_MILK_LITRES + 0.5],
+            'too many decimals' => [2.555],
+        ];
+    }
+
+    public function test_milk_litres_at_the_upper_limit_are_accepted(): void
+    {
+        $this->fakeDirectory($this->volunteer('Controller'));
+        $this->mockVerifiedClaims();
+
+        $this->withToken('valid-token')
+            ->postJson('/api/jobs', [...$this->validPayload(), 'jobType' => 'milk', 'milkLitres' => JobType::MAX_MILK_LITRES])
+            ->assertCreated()
+            ->assertJsonPath('milkLitres', JobType::MAX_MILK_LITRES);
     }
 
     public function test_locations_missing_a_place_id_are_rejected(): void

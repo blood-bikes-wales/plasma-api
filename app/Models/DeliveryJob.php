@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\JobAction;
 use App\Enums\JobStatus;
+use App\Enums\JobType;
 use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\DeliveryJobFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -17,6 +18,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'reference',
     'status',
+    'job_type',
+    'milk_litres',
     'sender_name',
     'sender_phone',
     'sender_organisation',
@@ -47,12 +50,23 @@ class DeliveryJob extends Model
     use HasFactory, HasUuidPrimaryKey;
 
     /**
+     * Mirrors the column default so a freshly created model reads as a standard job.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'job_type' => 'standard',
+    ];
+
+    /**
      * @return array<string, string>
      */
     protected function casts(): array
     {
         return [
             'status' => JobStatus::class,
+            'job_type' => JobType::class,
+            'milk_litres' => 'float',
             'contents_confirmed' => 'boolean',
             'leg_number' => 'integer',
             'estimated_collection_at' => 'datetime',
