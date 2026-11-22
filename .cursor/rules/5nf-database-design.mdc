@@ -1,0 +1,34 @@
+---
+description: Strive for fifth normal form (5NF) when designing or changing the database schema
+globs: database/migrations/**/*.php,app/Models/**/*.php,database/factories/**/*.php,docs/technical/**/*schema*.md,docs/technical/architecture.md
+alwaysApply: false
+---
+
+# 5NF database design
+
+When adding or changing tables, columns, FKs, or domain models in this repo, design for **fifth normal form (5NF / PJ/NF)** unless the user explicitly waives it.
+
+## Do
+
+- One clear **predicate** per table (what one row means).
+- Decompose join dependencies: no packing unrelated facts into one wide row.
+- Prefer subtype / detail tables over nullable “sometimes filled” columns (e.g. milk fields → `milk_job_details`).
+- Prefer parties / contacts as their own relvar when reused across facts.
+- Keep association tables as true M:N pivots with composite keys.
+- Document controlled exceptions (snapshots, event logs, external geocode caches).
+
+## Do not
+
+- Add denormalized copies “for convenience” without naming the exception and why.
+- Put request-level and hop-level facts on the same row when they join-depend separately.
+- Store the same odometer/event fact in two places (single source of truth).
+
+## Project reference
+
+Read and follow [`docs/technical/5nf-target-schema.md`](docs/technical/5nf-target-schema.md) for Plasma’s landed shape and allowed exceptions (e.g. `content_label_snapshot`).
+
+For definitions and industry practice, see [`.cursor/skills/5nf-database-design/references.md`](.cursor/skills/5nf-database-design/references.md) (Fagin PJ/NF, Silberschatz, Date, Aalto, Postgres cookbook).
+
+## API boundary
+
+5NF is a **storage** rule. Keep existing camelCase JSON contracts unless the user asks to change the API; compose the flat resource from normalized tables in services/resources.

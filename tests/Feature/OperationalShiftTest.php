@@ -59,11 +59,12 @@ class OperationalShiftTest extends TestCase
             'initial_mileage' => 9820,
         ]);
         $rider = Rider::factory()->create(['external_id' => 100002, 'name' => 'Mike Davies']);
-        OperationalShift::factory()->create([
-            'rider_id' => $rider->id,
-            'bike_id' => $bike->id,
-            'start_mileage' => 9820,
-        ]);
+        OperationalShift::factory()
+            ->withStartMileage(9820)
+            ->create([
+                'rider_id' => $rider->id,
+                'bike_id' => $bike->id,
+            ]);
 
         $this->fakeDirectory($this->riderVolunteer());
         $this->mockVerifiedClaims();
@@ -112,7 +113,7 @@ class OperationalShiftTest extends TestCase
         $this->mockVerifiedClaims();
         $this->withToken('valid-token')
             ->postJson("/api/shifts/{$shift->id}/logoff", [
-                'endMileage' => $shift->start_mileage + 10,
+                'endMileage' => $shift->startMileage() + 10,
             ])
             ->assertForbidden();
     }
@@ -150,8 +151,11 @@ class OperationalShiftTest extends TestCase
         ]);
         $this->assertDatabaseHas('operational_shifts', [
             'bike_id' => $bike->id,
-            'start_mileage' => 15234,
             'logged_off_at' => null,
+        ]);
+        $this->assertDatabaseHas('mileage_readings', [
+            'kind' => 'start',
+            'mileage' => 15234,
         ]);
     }
 
@@ -217,11 +221,12 @@ class OperationalShiftTest extends TestCase
         $firstBike = Bike::factory()->create();
         $secondBike = Bike::factory()->create();
         $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
-        OperationalShift::factory()->create([
-            'rider_id' => $rider->id,
-            'bike_id' => $firstBike->id,
-            'start_mileage' => $firstBike->currentMileage(),
-        ]);
+        OperationalShift::factory()
+            ->withStartMileage($firstBike->currentMileage())
+            ->create([
+                'rider_id' => $rider->id,
+                'bike_id' => $firstBike->id,
+            ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -240,11 +245,12 @@ class OperationalShiftTest extends TestCase
     {
         $bike = Bike::factory()->create();
         $rider = Rider::factory()->create(['external_id' => 100003, 'name' => 'Other Rider']);
-        OperationalShift::factory()->create([
-            'rider_id' => $rider->id,
-            'bike_id' => $bike->id,
-            'start_mileage' => $bike->currentMileage(),
-        ]);
+        OperationalShift::factory()
+            ->withStartMileage($bike->currentMileage())
+            ->create([
+                'rider_id' => $rider->id,
+                'bike_id' => $bike->id,
+            ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -338,12 +344,12 @@ class OperationalShiftTest extends TestCase
             'initial_mileage' => 15234,
         ]);
         $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
-        $shift = OperationalShift::factory()->create([
-            'rider_id' => $rider->id,
-            'bike_id' => $bike->id,
-            'start_mileage' => 15234,
-            'mileage_variance_reason' => null,
-        ]);
+        $shift = OperationalShift::factory()
+            ->withStartMileage(15234)
+            ->create([
+                'rider_id' => $rider->id,
+                'bike_id' => $bike->id,
+            ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -362,6 +368,7 @@ class OperationalShiftTest extends TestCase
         $this->assertSame(15298, $bike->fresh()->currentMileage());
         $this->assertDatabaseHas('mileage_readings', [
             'operational_shift_id' => $shift->id,
+            'kind' => 'end',
             'mileage' => 15298,
         ]);
 
@@ -374,7 +381,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_without_bike_kept_at_stores_lockup(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -391,7 +398,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_treats_a_blank_bike_kept_at_as_lockup(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -408,7 +415,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_stores_home_when_the_bike_is_kept_at_home(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -425,7 +432,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_stores_lockup_when_explicitly_chosen(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -442,7 +449,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_rejects_an_unknown_bike_kept_at_value(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -457,7 +464,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_rejects_end_mileage_below_start_mileage(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 15234]);
+        $shift = OperationalShift::factory()->withStartMileage(15234)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -472,7 +479,7 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_accepts_a_mileage_change_just_under_the_threshold_without_an_explanation(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 15000]);
+        $shift = OperationalShift::factory()->withStartMileage(15000)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -481,16 +488,17 @@ class OperationalShiftTest extends TestCase
             ->postJson("/api/shifts/{$shift->id}/logoff", ['endMileage' => 15499])
             ->assertOk();
 
-        $this->assertDatabaseHas('operational_shifts', [
-            'id' => $shift->id,
-            'end_mileage' => 15499,
-            'end_mileage_reason' => null,
+        $this->assertDatabaseHas('mileage_readings', [
+            'operational_shift_id' => $shift->id,
+            'kind' => 'end',
+            'mileage' => 15499,
+            'reason' => null,
         ]);
     }
 
     public function test_logoff_requires_an_explanation_for_a_mileage_change_of_500(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 15000]);
+        $shift = OperationalShift::factory()->withStartMileage(15000)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -512,10 +520,9 @@ class OperationalShiftTest extends TestCase
 
     public function test_logoff_stores_the_explanation_for_a_mileage_change_of_500(): void
     {
-        $shift = OperationalShift::factory()->create([
-            'start_mileage' => 15000,
-            'mileage_variance_reason' => 'Logon reason',
-        ]);
+        $shift = OperationalShift::factory()
+            ->withStartMileage(15000, 'Logon reason')
+            ->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -527,17 +534,23 @@ class OperationalShiftTest extends TestCase
             ])
             ->assertOk();
 
-        $this->assertDatabaseHas('operational_shifts', [
-            'id' => $shift->id,
-            'end_mileage' => 15500,
-            'end_mileage_reason' => 'Long distance transfer to Aberdeen',
-            'mileage_variance_reason' => 'Logon reason',
+        $this->assertDatabaseHas('mileage_readings', [
+            'operational_shift_id' => $shift->id,
+            'kind' => 'start',
+            'mileage' => 15000,
+            'reason' => 'Logon reason',
+        ]);
+        $this->assertDatabaseHas('mileage_readings', [
+            'operational_shift_id' => $shift->id,
+            'kind' => 'end',
+            'mileage' => 15500,
+            'reason' => 'Long distance transfer to Aberdeen',
         ]);
     }
 
     public function test_logoff_rejects_an_overlong_mileage_explanation(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -560,7 +573,7 @@ class OperationalShiftTest extends TestCase
 
         $this->withToken('valid-token')
             ->postJson("/api/shifts/{$shift->id}/logoff", [
-                'endMileage' => $shift->end_mileage,
+                'endMileage' => $shift->endMileage(),
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['shift']);
@@ -581,9 +594,9 @@ class OperationalShiftTest extends TestCase
 
         $this->assertDatabaseHas('operational_shifts', [
             'bike_id' => null,
-            'start_mileage' => null,
             'logged_off_at' => null,
         ]);
+        $this->assertDatabaseCount('mileage_readings', 0);
 
         $this->mockVerifiedClaims();
         $this->withToken('valid-token')
@@ -675,7 +688,6 @@ class OperationalShiftTest extends TestCase
         $this->assertDatabaseHas('operational_shifts', [
             'id' => $shift->id,
             'bike_id' => $bike->id,
-            'start_mileage' => 15234,
             'logged_off_at' => null,
         ]);
     }
@@ -732,7 +744,7 @@ class OperationalShiftTest extends TestCase
     public function test_assigning_a_bike_rejects_a_bike_already_on_another_active_shift(): void
     {
         $bike = $this->bikeInArea('E', ['initial_mileage' => 4000]);
-        OperationalShift::factory()->create(['bike_id' => $bike->id, 'start_mileage' => 4000]);
+        OperationalShift::factory()->withStartMileage(4000)->create(['bike_id' => $bike->id]);
         $shift = $this->bikelessShift();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
@@ -752,11 +764,12 @@ class OperationalShiftTest extends TestCase
         $existing = $this->bikeInArea('E', ['initial_mileage' => 100]);
         $other = $this->bikeInArea('E', ['initial_mileage' => 200]);
         $rider = Rider::factory()->create(['external_id' => 100001, 'name' => 'Alex Morgan']);
-        $shift = OperationalShift::factory()->create([
-            'rider_id' => $rider->id,
-            'bike_id' => $existing->id,
-            'start_mileage' => 100,
-        ]);
+        $shift = OperationalShift::factory()
+            ->withStartMileage(100)
+            ->create([
+                'rider_id' => $rider->id,
+                'bike_id' => $existing->id,
+            ]);
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();
@@ -840,15 +853,14 @@ class OperationalShiftTest extends TestCase
 
         $fresh = $shift->fresh();
         $this->assertNotNull($fresh->logged_off_at);
-        $this->assertNull($fresh->end_mileage);
-        $this->assertNull($fresh->end_mileage_reason);
+        $this->assertNull($fresh->endMileage());
         $this->assertSame('None', $fresh->faults);
         $this->assertDatabaseCount('mileage_readings', 0);
     }
 
     public function test_logoff_of_a_shift_with_a_bike_still_requires_end_mileage_and_bike_location(): void
     {
-        $shift = OperationalShift::factory()->create(['start_mileage' => 100]);
+        $shift = OperationalShift::factory()->withStartMileage(100)->create();
 
         $this->fakeDirectory($this->controllerAndRiderVolunteers());
         $this->mockVerifiedClaims();

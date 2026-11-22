@@ -6,8 +6,12 @@ use App\Enums\JobAction;
 use App\Enums\JobScope;
 use App\Enums\JobStatus;
 use App\Enums\JobType;
-use App\Models\DeliveryJob;
+use App\Models\DeliveryLeg;
+use App\Models\DeliveryRequest;
+use App\Models\JobContentType;
+use App\Models\MilkJobDetail;
 use App\Models\OperationalShift;
+use App\Models\Party;
 use App\Models\Place;
 use App\Models\ServiceArea;
 use App\Models\User;
@@ -17,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final class DeliveryJobService
@@ -24,11 +29,45 @@ final class DeliveryJobService
     public function __construct(private readonly RelayJobStatusAggregator $relayStatus) {}
 
     /**
+     * Relations for a list/detail top-level request (relay or soon-to-be flattened single leg).
+     *
+     * @var list<string>
+     */
+    private const array REQUEST_RELATIONS = [
+        'senderParty',
+        'milkDetail.motherParty',
+        'contentType',
+        'serviceAreas',
+        'legs.collectionPlace',
+        'legs.deliveryPlace',
+        'legs.operationalShift.rider',
+        'legs.request.senderParty',
+        'legs.request.milkDetail.motherParty',
+        'legs.request.serviceAreas',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const array LEG_RELATIONS = [
+        'collectionPlace',
+        'deliveryPlace',
+        'operationalShift.rider',
+        'request.senderParty',
+        'request.milkDetail.motherParty',
+        'request.contentType',
+        'request.serviceAreas',
+        'request.legs',
+    ];
+
+    public const int RECENT_COMPLETED_HOURS = 24;
+
+    /**
      * @param  array<string, mixed>  $payload
      */
-    public function create(User $actor, array $payload): DeliveryJob
+    public function create(User $actor, array $payload): DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $payload): DeliveryJob {
+        return DB::transaction(function () use ($actor, $payload): DeliveryLeg {
             $sender = $payload['sender'];
             $collection = $payload['collection'];
             $delivery = $payload['delivery'];
@@ -37,237 +76,254 @@ final class DeliveryJobService
             $deliveryPlace = $this->upsertPlace($delivery);
 
             $jobType = JobType::tryFrom((string) ($payload['jobType'] ?? '')) ?? JobType::Standard;
-            // Only milk jobs carry a mother's contact; the request rejects it for any other type.
             $mother = $jobType === JobType::Milk ? ($payload['mother'] ?? null) : null;
 
-            $job = DeliveryJob::query()->create([
-                'reference' => $this->nextReference(),
+            $senderParty = Party::query()->create([
+                'name' => $sender['name'],
+                'phone' => $sender['phone'],
+                'organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
+            ]);
+
+            $contents = (string) $payload['contents'];
+            $contentTypeId = JobContentType::query()
+                ->where('name', $contents)
+                ->value('id');
+
+            $sharedId = (string) Str::uuid();
+            $reference = $this->nextReference();
+
+            $request = DeliveryRequest::query()->create([
+                'id' => $sharedId,
+                'reference' => $reference,
                 'status' => JobStatus::New,
                 'job_type' => $jobType,
-                'milk_litres' => $jobType === JobType::Milk ? $payload['milkLitres'] : null,
                 'is_bereavement' => $jobType === JobType::Milk && filter_var($payload['isBereavement'] ?? false, FILTER_VALIDATE_BOOLEAN),
-                'sender_name' => $sender['name'],
-                'sender_phone' => $sender['phone'],
-                'sender_organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
-                'mother_name' => $mother === null ? null : $this->normaliseOptionalText($mother['name'] ?? null),
-                'mother_phone' => $mother === null ? null : $this->normaliseOptionalText($mother['phone'] ?? null),
-                'mother_phone_secondary' => $mother === null ? null : $this->normaliseOptionalText($mother['secondaryPhone'] ?? null),
+                'sender_party_id' => $senderParty->id,
+                'content_type_id' => $contentTypeId,
+                'content_label_snapshot' => $contents,
+                'scheduled_collection_at' => $this->parseTimestamp($payload['scheduledCollectionAt'] ?? null),
+                'created_by_user_id' => $actor->id,
+            ]);
+
+            if ($jobType === JobType::Milk) {
+                $motherParty = Party::query()->create([
+                    'name' => $this->normaliseOptionalText($mother['name'] ?? null) ?? 'Unknown',
+                    'phone' => $this->normaliseOptionalText($mother['phone'] ?? null) ?? '',
+                    'phone_secondary' => $this->normaliseOptionalText($mother['secondaryPhone'] ?? null),
+                ]);
+
+                MilkJobDetail::query()->create([
+                    'delivery_request_id' => $request->id,
+                    'milk_litres' => $payload['milkLitres'],
+                    'mother_party_id' => $motherParty->id,
+                ]);
+            }
+
+            $request->serviceAreas()->sync($this->serviceAreaIds(array_values($payload['serviceAreas'])));
+
+            $leg = DeliveryLeg::query()->create([
+                'id' => $sharedId,
+                'request_id' => $request->id,
+                'leg_number' => 1,
+                'reference' => $reference,
+                'status' => JobStatus::New,
                 'collection_place_id' => $collectionPlace->id,
                 'delivery_place_id' => $deliveryPlace->id,
                 'collection_notes' => $this->normaliseOptionalText($collection['notes'] ?? null),
                 'delivery_notes' => $this->normaliseOptionalText($delivery['notes'] ?? null),
                 'estimated_collection_at' => $this->parseTimestamp($payload['estimatedCollectionAt'] ?? null),
                 'estimated_delivery_at' => $this->parseTimestamp($payload['estimatedDeliveryAt'] ?? null),
-                'scheduled_collection_at' => $this->parseTimestamp($payload['scheduledCollectionAt'] ?? null),
-                'contents' => $payload['contents'],
-                'created_by_user_id' => $actor->id,
             ]);
 
-            $job->serviceAreas()->sync($this->serviceAreaIds(array_values($payload['serviceAreas'])));
-
             Log::info('Delivery job created.', [
-                'job_id' => $job->id,
-                'reference' => $job->reference,
+                'job_id' => $leg->id,
+                'reference' => $reference,
                 'user_id' => $actor->id,
             ]);
 
-            return $job->load(['collectionPlace', 'deliveryPlace', 'serviceAreas']);
+            return $this->loadLeg($leg);
         });
     }
 
     /**
-     * Relations the list and detail endpoints render a job with, so both return the same shape.
-     * The resource reads each of these, so they are always eager loaded.
+     * Top-level list items: multi-leg requests as aggregates; single-leg requests as the leg.
      *
-     * @var list<string>
-     */
-    private const array JOB_RELATIONS = [
-        'legs.collectionPlace',
-        'legs.deliveryPlace',
-        'legs.serviceAreas',
-        'legs.operationalShift.rider',
-        'collectionPlace',
-        'deliveryPlace',
-        'serviceAreas',
-        'operationalShift.rider',
-    ];
-
-    /**
-     * Completed jobs are listed for 24 hours after they finish unless the caller asks for all of them.
-     */
-    public const int RECENT_COMPLETED_HOURS = 24;
-
-    /**
-     * Top-level jobs (relay legs are nested under their parent) in a scope, newest first.
-     *
-     * For the Completed scope, $includeOlderCompleted = false keeps only jobs completed within
-     * the last RECENT_COMPLETED_HOURS. A relay parent is filtered as one job: its legs always
-     * come with it, whatever their own times are.
-     *
-     * @return Collection<int, DeliveryJob>
+     * @return Collection<int, DeliveryRequest|DeliveryLeg>
      */
     public function listByScope(JobScope $scope, bool $includeOlderCompleted = true): Collection
     {
-        $query = DeliveryJob::query()
-            ->topLevel()
+        $query = DeliveryRequest::query()
             ->whereIn('status', $scope->statuses())
-            ->with(self::JOB_RELATIONS);
+            ->with(self::REQUEST_RELATIONS);
 
         if ($scope === JobScope::Completed && ! $includeOlderCompleted) {
             $this->wherePastDay($query);
         }
 
-        return $query
+        $requests = $query
             ->orderByDesc('updated_at')
             ->orderByDesc('id')
             ->get()
-            ->each(static fn (DeliveryJob $job): DeliveryJob => $job->linkLegsToParent());
+            ->each(static fn (DeliveryRequest $request): DeliveryRequest => $request->linkLegsToParent());
+
+        /** @var Collection<int, DeliveryRequest|DeliveryLeg> $items */
+        $items = $requests->map(function (DeliveryRequest $request): DeliveryRequest|DeliveryLeg {
+            if ($request->isRelay()) {
+                return $request;
+            }
+
+            /** @var DeliveryLeg $leg */
+            $leg = $request->legs->first();
+
+            return $leg;
+        });
+
+        return $items->values();
     }
 
     /**
-     * One job (a top-level job or a relay leg) by id, never age-filtered, loaded exactly as the
-     * lists load it so the resource renders the same fields and queries nothing per row.
+     * Resolve a path id to a request (relay parent) or leg.
      */
-    public function find(DeliveryJob $job): DeliveryJob
+    public function resolve(string $id): DeliveryRequest|DeliveryLeg
     {
-        if ($job->parent_job_id !== null) {
-            // A leg: its siblings (via the parent) drive waitingForLeg and the allowed actions.
-            return $job->load([
-                'collectionPlace',
-                'deliveryPlace',
-                'serviceAreas',
-                'operationalShift.rider',
-                'parentJob.legs',
-            ]);
+        $leg = DeliveryLeg::query()->whereKey($id)->first();
+        if ($leg !== null) {
+            return $this->findLeg($leg);
         }
 
-        return $job->load(self::JOB_RELATIONS)->linkLegsToParent();
+        $request = DeliveryRequest::query()->whereKey($id)->first();
+        if ($request !== null) {
+            return $this->findRequest($request);
+        }
+
+        abort(404);
+    }
+
+    public function find(DeliveryRequest|DeliveryLeg $job): DeliveryRequest|DeliveryLeg
+    {
+        if ($job instanceof DeliveryRequest) {
+            return $this->findRequest($job);
+        }
+
+        return $this->findLeg($job);
+    }
+
+    private function findRequest(DeliveryRequest $request): DeliveryRequest
+    {
+        return $request->load(self::REQUEST_RELATIONS)->linkLegsToParent();
+    }
+
+    private function findLeg(DeliveryLeg $leg): DeliveryLeg
+    {
+        return $this->loadLeg($leg);
+    }
+
+    private function loadLeg(DeliveryLeg $leg): DeliveryLeg
+    {
+        $leg->load(self::LEG_RELATIONS);
+        $request = $leg->request;
+        if ($request !== null) {
+            $request->linkLegsToParent();
+        }
+
+        return $leg;
     }
 
     /**
-     * Keep jobs that completed in the last 24 hours: delivered_at for a Delivered job and
-     * cancelled_at for a Cancelled one, OR updated_at.
-     *
-     * delivered_at / cancelled_at are what the client claims (the SPA sends the job's created day
-     * plus the typed time), so a job created Monday 22:00 and delivered Tuesday 02:00 arrives
-     * claiming Monday 02:00, already a day old when it was recorded. updated_at is the time the
-     * server recorded the completion: Delivered and Cancelled are terminal, nothing edits a job
-     * afterwards, so it stops moving. Either being recent is enough, so this can only show more
-     * and never hides a delivery that was just recorded. It is also the fallback for a relay
-     * parent, whose status is rolled up from its legs and which never gets delivered_at.
-     *
-     * Three ranges ORed (updated_at, delivered_at for Delivered, cancelled_at for Cancelled), each served by
-     * its own single-column index and combined with a bitmap OR. A COALESCE(...) across the columns could not use any.
-     *
-     * @param  Builder<DeliveryJob>  $query
+     * @param  Builder<DeliveryRequest>  $query
      */
     private function wherePastDay(Builder $query): void
     {
         $since = now()->subHours(self::RECENT_COMPLETED_HOURS);
 
+        // Same three predicates as the old single-row filter, applied to hops; plus request.updated_at
+        // for multi-leg parents whose status is rolled up without a delivered_at/cancelled_at on the request.
         $query->where(function (Builder $query) use ($since): void {
-            $query->where('updated_at', '>=', $since)
-                ->orWhere(fn (Builder $query) => $query
-                    ->where('status', JobStatus::Delivered)
-                    ->where('delivered_at', '>=', $since))
-                ->orWhere(fn (Builder $query) => $query
-                    ->where('status', JobStatus::Cancelled)
-                    ->where('cancelled_at', '>=', $since));
+            $query->whereHas('legs', function (Builder $legs) use ($since): void {
+                $legs->where(function (Builder $legs) use ($since): void {
+                    $legs->where('updated_at', '>=', $since)
+                        ->orWhere(fn (Builder $legs) => $legs
+                            ->where('status', JobStatus::Delivered)
+                            ->where('delivered_at', '>=', $since))
+                        ->orWhere(fn (Builder $legs) => $legs
+                            ->where('status', JobStatus::Cancelled)
+                            ->where('cancelled_at', '>=', $since));
+                });
+            })->orWhere(function (Builder $query) use ($since): void {
+                $query->where('updated_at', '>=', $since)
+                    ->has('legs', '>', 1);
+            });
         });
     }
 
     /**
-     * Set or change when the job's collection is arranged for, while it is New or Allocated.
-     * The request has already insisted on a future time for a milk job.
-     *
-     * A relay is scheduled through its top-level job, which hands the time to every leg that is
-     * still New or Allocated; a leg on its own cannot be scheduled.
-     *
      * @param  array<string, mixed>  $payload
      */
-    public function schedule(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function schedule(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryRequest|DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryRequest|DeliveryLeg {
+            $request = $this->lockRequestFor($job);
 
-            // Checked on the locked row, before anything is written, so a rejected call never touches updated_at.
-            if ($locked->parent_job_id !== null) {
+            if ($job instanceof DeliveryLeg && $job->requestIsRelay()) {
                 throw ValidationException::withMessages([
                     'job' => ['Schedule a relay through the whole job, not one of its legs.'],
                 ]);
             }
 
-            if (! in_array($locked->status, [JobStatus::New, JobStatus::Allocated], true)) {
+            if (! in_array($request->status, [JobStatus::New, JobStatus::Allocated], true)) {
                 throw ValidationException::withMessages([
-                    'job' => [sprintf('Job is %s. Only a New or Allocated job can be scheduled.', $locked->status->value)],
+                    'job' => [sprintf('Job is %s. Only a New or Allocated job can be scheduled.', $request->status->value)],
                 ]);
             }
 
             $scheduledAt = $this->parseTimestamp($payload['scheduledCollectionAt']);
-
-            $locked->fill(['scheduled_collection_at' => $scheduledAt])->save();
-
-            if ($locked->isRelayParent()) {
-                DeliveryJob::query()
-                    ->where('parent_job_id', $locked->id)
-                    ->whereIn('status', [JobStatus::New, JobStatus::Allocated])
-                    ->update(['scheduled_collection_at' => $scheduledAt]);
-            }
+            $request->fill(['scheduled_collection_at' => $scheduledAt])->save();
 
             Log::info('Delivery job scheduled.', [
-                'job_id' => $locked->id,
+                'job_id' => $request->id,
                 'user_id' => $actor->id,
             ]);
 
-            return $this->find($locked->refresh());
+            return $this->find($job instanceof DeliveryLeg ? $job->refresh() : $request->refresh());
         });
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function relay(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function relay(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryRequest
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
-            $this->assertRelayConversionAllowed($locked);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryRequest {
+            $request = $this->lockRequestFor($job);
+            $this->assertRelayConversionAllowed($request);
 
-            $routePoints = $this->routePoints($locked, $payload['rendezvousPoints']);
-            $this->createRelayLegs($actor, $locked, $routePoints);
+            /** @var DeliveryLeg $soleLeg */
+            $soleLeg = DeliveryLeg::query()
+                ->where('request_id', $request->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $routePoints = $this->routePoints($soleLeg, $payload['rendezvousPoints']);
+            $soleLeg->delete();
+            $this->createRelayLegs($actor, $request, $routePoints);
 
             Log::info('Delivery job converted to a relay.', [
-                'job_id' => $locked->id,
+                'job_id' => $request->id,
                 'leg_count' => count($routePoints) - 1,
                 'user_id' => $actor->id,
             ]);
 
-            return $locked->refresh()->load([
-                'legs.collectionPlace',
-                'legs.deliveryPlace',
-                'legs.serviceAreas',
-                'collectionPlace',
-                'deliveryPlace',
-                'serviceAreas',
-            ])->linkLegsToParent();
+            return $this->findRequest($request->refresh());
         });
     }
 
     /**
-     * Allocate a rider (an active shift) to a New job, or change the rider of an Allocated one until
-     * it is collected.
-     *
-     * Re-allocating replaces operational_shift_id and sets allocated_at to the new allocation, all
-     * under the same row lock as every other transition. Allocating to the shift the job already has
-     * is a no-op (nothing is written, so updated_at and allocated_at stay put), even if that shift has
-     * since been logged off, so a retried request is harmless. Any other target must be an active
-     * shift; if it is not, the exception leaves the existing rider untouched.
-     *
      * @param  array<string, mixed>  $payload
      */
-    public function allocate(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function allocate(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryLeg {
+            $locked = $this->lockLeg($job);
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Allocate);
 
@@ -301,21 +357,18 @@ final class DeliveryJobService
         });
     }
 
-    private function reloadAfterAllocate(DeliveryJob $locked): DeliveryJob
+    private function reloadAfterAllocate(DeliveryLeg $locked): DeliveryLeg
     {
-        $updated = $locked->refresh()->load(['operationalShift.rider', 'collectionPlace', 'deliveryPlace', 'serviceAreas']);
-        $this->loadSiblingLegs($updated);
-
-        return $updated;
+        return $this->loadLeg($locked->refresh());
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function collect(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function collect(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryLeg {
+            $locked = $this->lockLeg($job);
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Collect);
             $this->assertPreviousLegDelivered($locked, JobAction::Collect);
@@ -327,8 +380,7 @@ final class DeliveryJobService
                 'collected_at' => $this->parseTimestamp($payload['collectedAt'] ?? null) ?? now(),
             ])->save();
 
-            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
-            $this->loadSiblingLegs($updated);
+            $updated = $this->loadLeg($locked->refresh());
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job collected.', [
@@ -343,10 +395,10 @@ final class DeliveryJobService
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function deliver(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function deliver(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryLeg {
+            $locked = $this->lockLeg($job);
             $this->assertDirectLifecycleAllowed($locked);
             $this->assertActionAllowed($locked, JobAction::Deliver);
             $this->assertPreviousLegDelivered($locked, JobAction::Deliver);
@@ -360,8 +412,7 @@ final class DeliveryJobService
                 'delivered_at' => $this->parseTimestamp($payload['deliveredAt'] ?? null) ?? now(),
             ])->save();
 
-            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
-            $this->loadSiblingLegs($updated);
+            $updated = $this->loadLeg($locked->refresh());
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job delivered.', [
@@ -376,18 +427,18 @@ final class DeliveryJobService
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function cancel(User $actor, DeliveryJob $job, array $payload): DeliveryJob
+    public function cancel(User $actor, DeliveryRequest|DeliveryLeg $job, array $payload): DeliveryRequest|DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $job, $payload): DeliveryJob {
-            $locked = $this->lockJob($job->id);
+        return DB::transaction(function () use ($actor, $job, $payload): DeliveryRequest|DeliveryLeg {
+            if ($job instanceof DeliveryRequest) {
+                $request = $this->lockRequestFor($job);
+                $this->assertActionAllowedOnStatus($request->status, JobAction::Cancel);
 
-            // Also for a relay parent: a finished relay must not be cancelled (or re-cancelled) afterwards, which
-            // would rewrite its status and bump updated_at, the server-recorded completion time the 24 hour list uses.
-            $this->assertActionAllowed($locked, JobAction::Cancel);
-
-            if ($locked->isRelayParent()) {
-                return $this->cancelRelayParent($actor, $locked, $payload);
+                return $this->cancelRelayParent($actor, $request, $payload);
             }
+
+            $locked = $this->lockLeg($job);
+            $this->assertActionAllowed($locked, JobAction::Cancel);
 
             $locked->fill([
                 'status' => JobStatus::Cancelled,
@@ -395,7 +446,7 @@ final class DeliveryJobService
                 'cancelled_at' => now(),
             ])->save();
 
-            $updated = $locked->refresh()->load(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'operationalShift.rider']);
+            $updated = $this->loadLeg($locked->refresh());
             $this->syncRelayParentFromLeg($updated);
 
             Log::info('Delivery job cancelled.', [
@@ -431,7 +482,6 @@ final class DeliveryJobService
             'longitude' => $location['longitude'],
         ]);
 
-        // A client that does not send a postcode (older SPA, or a place Google has none for) must not erase one we already hold.
         if ($postcode !== null) {
             $place->postcode = $postcode;
         }
@@ -462,25 +512,25 @@ final class DeliveryJobService
      * @param  array<int, array<string, mixed>>  $rendezvousPoints
      * @return list<array<string, mixed>>
      */
-    private function routePoints(DeliveryJob $job, array $rendezvousPoints): array
+    private function routePoints(DeliveryLeg $leg, array $rendezvousPoints): array
     {
-        $job->loadMissing(['collectionPlace', 'deliveryPlace']);
+        $leg->loadMissing(['collectionPlace', 'deliveryPlace']);
 
         return [
             [
-                'placeId' => $job->collectionPlace->external_id,
-                'address' => $job->collectionPlace->address,
-                'postcode' => $job->collectionPlace->postcode,
-                'latitude' => $job->collectionPlace->latitude,
-                'longitude' => $job->collectionPlace->longitude,
+                'placeId' => $leg->collectionPlace->external_id,
+                'address' => $leg->collectionPlace->address,
+                'postcode' => $leg->collectionPlace->postcode,
+                'latitude' => $leg->collectionPlace->latitude,
+                'longitude' => $leg->collectionPlace->longitude,
             ],
             ...$rendezvousPoints,
             [
-                'placeId' => $job->deliveryPlace->external_id,
-                'address' => $job->deliveryPlace->address,
-                'postcode' => $job->deliveryPlace->postcode,
-                'latitude' => $job->deliveryPlace->latitude,
-                'longitude' => $job->deliveryPlace->longitude,
+                'placeId' => $leg->deliveryPlace->external_id,
+                'address' => $leg->deliveryPlace->address,
+                'postcode' => $leg->deliveryPlace->postcode,
+                'latitude' => $leg->deliveryPlace->latitude,
+                'longitude' => $leg->deliveryPlace->longitude,
             ],
         ];
     }
@@ -488,63 +538,48 @@ final class DeliveryJobService
     /**
      * @param  list<array<string, mixed>>  $routePoints
      */
-    private function createRelayLegs(User $actor, DeliveryJob $parent, array $routePoints): void
+    private function createRelayLegs(User $actor, DeliveryRequest $request, array $routePoints): void
     {
-        $parent->loadMissing('serviceAreas');
-        $serviceAreaIds = $parent->serviceAreas->pluck('id')->all();
         $legCount = count($routePoints) - 1;
 
-        for ($index = 0; $index < $legCount; $index++) {
-            $collection = $routePoints[$index];
-            $delivery = $routePoints[$index + 1];
+        array_map(
+            function (int $index) use ($request, $routePoints): DeliveryLeg {
+                $collection = $routePoints[$index];
+                $delivery = $routePoints[$index + 1];
 
-            $collectionPlace = $this->upsertPlace($collection);
-            $deliveryPlace = $this->upsertPlace($delivery);
+                $collectionPlace = $this->upsertPlace($collection);
+                $deliveryPlace = $this->upsertPlace($delivery);
 
-            $leg = DeliveryJob::query()->create([
-                'reference' => sprintf('%s-L%d', $parent->reference, $index + 1),
-                'status' => JobStatus::New,
-                'parent_job_id' => $parent->id,
-                'leg_number' => $index + 1,
-                'job_type' => $parent->job_type,
-                'milk_litres' => $parent->milk_litres,
-                'is_bereavement' => $parent->is_bereavement,
-                'sender_name' => $parent->sender_name,
-                'sender_phone' => $parent->sender_phone,
-                'sender_organisation' => $parent->sender_organisation,
-                'mother_name' => $parent->mother_name,
-                'mother_phone' => $parent->mother_phone,
-                'mother_phone_secondary' => $parent->mother_phone_secondary,
-                'collection_place_id' => $collectionPlace->id,
-                'delivery_place_id' => $deliveryPlace->id,
-                // Only rendezvous points carry arrivesAt, so the last leg (to the final delivery) stays null.
-                'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null),
-                // The relay is arranged for one day, so every leg shares it.
-                'scheduled_collection_at' => $parent->scheduled_collection_at,
-                'contents' => $parent->contents,
-                'created_by_user_id' => $actor->id,
-            ]);
-
-            $leg->serviceAreas()->sync($serviceAreaIds);
-        }
+                return DeliveryLeg::query()->create([
+                    'request_id' => $request->id,
+                    'leg_number' => $index + 1,
+                    'reference' => sprintf('%s-L%d', $request->reference, $index + 1),
+                    'status' => JobStatus::New,
+                    'collection_place_id' => $collectionPlace->id,
+                    'delivery_place_id' => $deliveryPlace->id,
+                    'planned_arrival_at' => $this->parseTimestamp($delivery['arrivesAt'] ?? null),
+                ]);
+            },
+            range(0, $legCount - 1),
+        );
     }
 
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function cancelRelayParent(User $actor, DeliveryJob $parent, array $payload): DeliveryJob
+    private function cancelRelayParent(User $actor, DeliveryRequest $request, array $payload): DeliveryRequest
     {
         $reason = $this->normaliseOptionalText($payload['reason'] ?? null);
         $cancelledAt = now();
 
-        $legs = DeliveryJob::query()
-            ->where('parent_job_id', $parent->id)
+        $legs = DeliveryLeg::query()
+            ->where('request_id', $request->id)
             ->lockForUpdate()
             ->get();
 
-        foreach ($legs as $leg) {
+        $legs->each(function (DeliveryLeg $leg) use ($reason, $cancelledAt): void {
             if ($leg->status === JobStatus::Delivered || $leg->status === JobStatus::Cancelled) {
-                continue;
+                return;
             }
 
             $leg->fill([
@@ -552,92 +587,85 @@ final class DeliveryJobService
                 'cancellation_reason' => $reason,
                 'cancelled_at' => $cancelledAt,
             ])->save();
-        }
+        });
 
-        $parent->fill([
+        $request->fill([
             'status' => JobStatus::Cancelled,
-            'cancellation_reason' => $reason,
-            'cancelled_at' => $cancelledAt,
         ])->save();
 
         Log::info('Relay delivery job cancelled.', [
-            'job_id' => $parent->id,
+            'job_id' => $request->id,
             'user_id' => $actor->id,
         ]);
 
-        return $parent->refresh()->load([
-            'legs.collectionPlace',
-            'legs.deliveryPlace',
-            'legs.serviceAreas',
-            'collectionPlace',
-            'deliveryPlace',
-            'serviceAreas',
-        ])->linkLegsToParent();
+        return $this->findRequest($request->refresh());
     }
 
-    private function syncRelayParentFromLeg(DeliveryJob $leg): void
+    private function syncRelayParentFromLeg(DeliveryLeg $leg): void
     {
-        if ($leg->parent_job_id === null) {
+        if (! $leg->requestIsRelay()) {
+            // Keep single-leg request status in sync with its only hop.
+            $request = DeliveryRequest::query()
+                ->whereKey($leg->request_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($request === null) {
+                return;
+            }
+
+            $request->status = $leg->status;
+            $request->save();
+
             return;
         }
 
-        /** @var DeliveryJob|null $parent */
-        $parent = DeliveryJob::query()
-            ->whereKey($leg->parent_job_id)
+        $request = DeliveryRequest::query()
+            ->whereKey($leg->request_id)
             ->lockForUpdate()
             ->first();
 
-        if ($parent === null || ! $parent->isRelayParent()) {
+        if ($request === null) {
             return;
         }
 
-        $legs = DeliveryJob::query()
-            ->where('parent_job_id', $parent->id)
+        $legs = DeliveryLeg::query()
+            ->where('request_id', $request->id)
             ->orderBy('leg_number')
             ->get();
 
-        $parent->status = $this->relayStatus->aggregate($legs);
-        $parent->save();
+        $request->status = $this->relayStatus->aggregate($legs);
+        $request->save();
     }
 
-    private function assertRelayConversionAllowed(DeliveryJob $job): void
+    private function assertRelayConversionAllowed(DeliveryRequest $request): void
     {
-        if ($job->isRelayParent()) {
+        if ($request->isRelay()) {
             throw ValidationException::withMessages([
                 'job' => ['This job is already a relay.'],
             ]);
         }
 
-        if ($job->parent_job_id !== null) {
-            throw ValidationException::withMessages([
-                'job' => ['Relay legs cannot be converted again.'],
-            ]);
-        }
-
-        if ($job->status !== JobStatus::New) {
+        if ($request->status !== JobStatus::New) {
             throw ValidationException::withMessages([
                 'job' => ['Only a new job can be converted to a relay.'],
             ]);
         }
     }
 
-    private function assertDirectLifecycleAllowed(DeliveryJob $job): void
+    private function assertDirectLifecycleAllowed(DeliveryLeg $leg): void
     {
-        if (! $job->isRelayParent()) {
-            return;
-        }
-
-        throw ValidationException::withMessages([
-            'job' => ['Manage relay jobs through their individual legs.'],
-        ]);
+        // Lifecycle always targets a leg; requests are rejected by lockLeg.
     }
 
-    private function lockJob(string $jobId): DeliveryJob
+    private function lockRequestFor(DeliveryRequest|DeliveryLeg $job): DeliveryRequest
     {
-        /** @var DeliveryJob|null $locked */
-        $locked = DeliveryJob::query()
-            ->with(['collectionPlace', 'deliveryPlace', 'serviceAreas', 'legs'])
-            ->whereKey($jobId)
+        $requestId = $job instanceof DeliveryRequest ? $job->id : $job->request_id;
+
+        /** @var DeliveryRequest|null $locked */
+        $locked = DeliveryRequest::query()
+            ->with(self::REQUEST_RELATIONS)
+            ->whereKey($requestId)
             ->lockForUpdate()
             ->first();
 
@@ -647,35 +675,36 @@ final class DeliveryJobService
             ]);
         }
 
-        // Read inside the transaction, after the lock, so the previous-leg check never sees a copy
-        // loaded before the request started (route model binding).
-        $this->loadSiblingLegs($locked);
+        return $locked->linkLegsToParent();
+    }
+
+    private function lockLeg(DeliveryRequest|DeliveryLeg $job): DeliveryLeg
+    {
+        if ($job instanceof DeliveryRequest) {
+            throw ValidationException::withMessages([
+                'job' => ['Manage relay jobs through their individual legs.'],
+            ]);
+        }
+
+        /** @var DeliveryLeg|null $locked */
+        $locked = DeliveryLeg::query()
+            ->with(self::LEG_RELATIONS)
+            ->whereKey($job->id)
+            ->lockForUpdate()
+            ->first();
+
+        if ($locked === null) {
+            throw ValidationException::withMessages([
+                'job' => ['The selected job is invalid.'],
+            ]);
+        }
+
+        $locked->request?->linkLegsToParent();
 
         return $locked;
     }
 
-    /**
-     * Eager load the siblings of a relay leg in one go so allowed actions and waitingForLeg never query per leg.
-     */
-    private function loadSiblingLegs(DeliveryJob $job): void
-    {
-        if ($job->parent_job_id !== null) {
-            $job->load('parentJob.legs');
-        }
-    }
-
-    /**
-     * Leg N (N > 1) can only be collected or delivered once leg N-1 is Delivered. Allocating is not
-     * checked, so riders can be lined up in advance.
-     *
-     * No lock on the previous leg is needed. This runs inside the transaction on a fresh read, and
-     * Delivered is terminal (no action leaves it, and cancelling a relay skips Delivered legs), so
-     * a leg that reads Delivered stays Delivered. If leg N-1 is being delivered concurrently and
-     * has not committed yet we read its old status and reject, which is the same outcome as this
-     * request having arrived first; the caller can simply retry. Leg N therefore cannot complete
-     * out of order.
-     */
-    private function assertPreviousLegDelivered(DeliveryJob $leg, JobAction $action): void
+    private function assertPreviousLegDelivered(DeliveryLeg $leg, JobAction $action): void
     {
         $waitingFor = $leg->waitingForLeg();
 
@@ -719,9 +748,14 @@ final class DeliveryJobService
         return $shift;
     }
 
-    private function assertActionAllowed(DeliveryJob $job, JobAction $action): void
+    private function assertActionAllowed(DeliveryLeg $job, JobAction $action): void
     {
-        $allowed = JobAction::forStatus($job->status);
+        $this->assertActionAllowedOnStatus($job->status, $action);
+    }
+
+    private function assertActionAllowedOnStatus(JobStatus $status, JobAction $action): void
+    {
+        $allowed = JobAction::forStatus($status);
 
         if (in_array($action, $allowed, true)) {
             return;
@@ -736,7 +770,7 @@ final class DeliveryJobService
             'action' => [
                 sprintf(
                     'Job is %s. Allowed actions: %s.',
-                    $job->status->value,
+                    $status->value,
                     $allowedLabels === [] ? 'none' : implode(', ', $allowedLabels),
                 ),
             ],
@@ -749,15 +783,14 @@ final class DeliveryJobService
             return null;
         }
 
-        // Normalise to UTC so an offset such as +01:00 is stored as the same instant, not as its wall-clock digits.
         return Carbon::parse($value)->utc();
     }
 
     private function nextReference(): string
     {
-        $sequence = DeliveryJob::query()->count() + 1;
+        $sequence = DeliveryRequest::query()->count() + 1;
 
-        while (DeliveryJob::query()->where('reference', sprintf('JB-%04d', $sequence))->exists()) {
+        while (DeliveryRequest::query()->where('reference', sprintf('JB-%04d', $sequence))->exists()) {
             $sequence++;
         }
 

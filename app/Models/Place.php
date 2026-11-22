@@ -33,18 +33,18 @@ class Place extends Model
     }
 
     /**
-     * @return HasMany<DeliveryJob, $this>
+     * @return HasMany<DeliveryLeg, $this>
      */
     public function collectionJobs(): HasMany
     {
-        return $this->hasMany(DeliveryJob::class, 'collection_place_id');
+        return $this->hasMany(DeliveryLeg::class, 'collection_place_id');
     }
 
     /**
-     * @return HasMany<DeliveryJob, $this>
+     * @return HasMany<DeliveryLeg, $this>
      */
     public function deliveryJobs(): HasMany
     {
-        return $this->hasMany(DeliveryJob::class, 'delivery_place_id');
+        return $this->hasMany(DeliveryLeg::class, 'delivery_place_id');
     }
 }

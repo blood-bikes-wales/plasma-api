@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Enums\JobStatus;
+use App\Enums\MileageReadingKind;
 use App\Models\DeliveryJob;
+use App\Models\DeliveryRequest;
+use App\Models\MileageReading;
 use App\Models\OperationalShift;
 use App\Models\Rider;
 use App\Models\User;
@@ -109,7 +112,16 @@ class ReallocateDeliveryJobTest extends TestCase
     public function test_the_same_shift_is_a_no_op_even_after_that_shift_logged_off(): void
     {
         [$job, $shift] = $this->allocatedJob();
-        $shift->update(['logged_off_at' => now(), 'end_mileage' => $shift->start_mileage + 5]);
+        $startMileage = $shift->startMileage() ?? 0;
+        $shift->update(['logged_off_at' => now()]);
+        MileageReading::query()->create([
+            'operational_shift_id' => $shift->id,
+            'kind' => MileageReadingKind::End,
+            'mileage' => $startMileage + 5,
+            'reason' => null,
+            'recorded_at' => now(),
+            'recorded_by_user_id' => $shift->logged_on_by_user_id,
+        ]);
         $this->signInAs('Controller');
 
         $this->withToken('valid-token')
@@ -435,26 +447,30 @@ class ReallocateDeliveryJobTest extends TestCase
     }
 
     /**
-     * A relay whose legs are all Allocated, one per shift, under a parent rolled up as Allocated.
+     * A relay whose legs are all Allocated, one per shift, under a request rolled up as Allocated.
      *
      * @param  list<OperationalShift>  $shifts
-     * @return array{0: DeliveryJob, 1: list<DeliveryJob>}
+     * @return array{0: DeliveryRequest, 1: list<DeliveryJob>}
      */
     private function relayWithAllocatedLegs(array $shifts): array
     {
-        $parent = DeliveryJob::factory()->allocated()->create();
+        $seed = DeliveryJob::factory()->allocated()->create();
+        $requestId = $seed->request_id;
 
         $legs = [];
         foreach ($shifts as $index => $shift) {
             $legs[] = DeliveryJob::factory()->allocated()->create([
-                'parent_job_id' => $parent->id,
+                'request_id' => $requestId,
                 'leg_number' => $index + 1,
                 'operational_shift_id' => $shift->id,
                 'allocated_at' => self::ALLOCATED_AT,
             ]);
         }
 
-        return [$parent, $legs];
+        $request = DeliveryRequest::query()->findOrFail($requestId);
+        $request->update(['status' => JobStatus::Allocated]);
+
+        return [$request->fresh(['legs']), $legs];
     }
 
     private function assertUnchanged(DeliveryJob $job, OperationalShift $shift, Carbon $updatedAt, JobStatus $status = JobStatus::Allocated): void

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\BikeKeptAt;
+use App\Enums\MileageReadingKind;
 use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\OperationalShiftFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -10,21 +11,18 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'rider_id',
     'bike_id',
-    'start_mileage',
-    'mileage_variance_reason',
     'shift_type',
     'logged_on_at',
     'logged_on_by_user_id',
     'logged_off_at',
-    'end_mileage',
     'faults',
     'bike_kept_at',
-    'end_mileage_reason',
     'logged_off_by_user_id',
 ])]
 class OperationalShift extends Model
@@ -38,8 +36,6 @@ class OperationalShift extends Model
     protected function casts(): array
     {
         return [
-            'start_mileage' => 'integer',
-            'end_mileage' => 'integer',
             'logged_on_at' => 'datetime',
             'logged_off_at' => 'datetime',
             'bike_kept_at' => BikeKeptAt::class,
@@ -79,11 +75,44 @@ class OperationalShift extends Model
     }
 
     /**
+     * @return HasMany<MileageReading, $this>
+     */
+    public function mileageReadings(): HasMany
+    {
+        return $this->hasMany(MileageReading::class);
+    }
+
+    /**
      * @return HasOne<MileageReading, $this>
      */
-    public function mileageReading(): HasOne
+    public function startMileageReading(): HasOne
     {
-        return $this->hasOne(MileageReading::class);
+        return $this->hasOne(MileageReading::class)
+            ->where('kind', MileageReadingKind::Start);
+    }
+
+    /**
+     * @return HasOne<MileageReading, $this>
+     */
+    public function endMileageReading(): HasOne
+    {
+        return $this->hasOne(MileageReading::class)
+            ->where('kind', MileageReadingKind::End);
+    }
+
+    public function startMileage(): ?int
+    {
+        return $this->startMileageReading?->mileage;
+    }
+
+    public function endMileage(): ?int
+    {
+        return $this->endMileageReading?->mileage;
+    }
+
+    public function mileageVarianceReason(): ?string
+    {
+        return $this->startMileageReading?->reason;
     }
 
     public function isActive(): bool

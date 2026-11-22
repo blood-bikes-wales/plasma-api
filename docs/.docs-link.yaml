@@ -2,7 +2,7 @@ cloudId: "https://bloodbikeswales.atlassian.net"
 spaceId: "PD"
 projectName: "plasma-api"
 docsParentId: "17891506" # Project Documentation space homepage
-mcpServer: "user-Confluence communication server"
+mcpServer: "plugin-atlassian-atlassian"
 
 folders:
   ".":
@@ -34,6 +34,11 @@ pages:
     title: "Architecture"
     folder: "technical"
     url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/17924147/Architecture"
+  technical/5nf-target-schema.md:
+    pageId: "41025539"
+    title: "5NF target schema"
+    folder: "technical"
+    url: "https://bloodbikeswales.atlassian.net/wiki/spaces/PD/pages/41025539/5NF+target+schema"
   technical/gcp-hosting.md:
     pageId: "17924149"
     title: "GCP hosting"

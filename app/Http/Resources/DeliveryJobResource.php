@@ -5,14 +5,16 @@ namespace App\Http\Resources;
 use App\Authorization\Capability;
 use App\Authorization\RequestRoles;
 use App\Enums\JobType;
-use App\Models\DeliveryJob;
+use App\Models\DeliveryLeg;
+use App\Models\DeliveryRequest;
+use App\Models\Place;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * JSON shape for a Plasma delivery job.
+ * JSON shape for a Plasma delivery job (request aggregate or leg).
  *
- * @mixin DeliveryJob
+ * @mixin DeliveryRequest|DeliveryLeg
  */
 class DeliveryJobResource extends JsonResource
 {
@@ -23,97 +25,172 @@ class DeliveryJobResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $collection = $this->collectionPlace;
-        $delivery = $this->deliveryPlace;
-        $shift = $this->operationalShift;
-        $rider = $shift?->rider;
-        $isRelay = $this->isRelayParent();
+        if ($this->resource instanceof DeliveryRequest) {
+            return $this->requestToArray($request);
+        }
+
+        /** @var DeliveryLeg $leg */
+        $leg = $this->resource;
+
+        return $this->legToArray($request, $leg);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function requestToArray(Request $httpRequest): array
+    {
+        /** @var DeliveryRequest $job */
+        $job = $this->resource;
+        [$firstLeg, $lastLeg] = $job->endpointLegs();
+        $collection = $firstLeg?->collectionPlace;
+        $delivery = $lastLeg?->deliveryPlace;
+        $sender = $job->senderParty;
+        $motherParty = $job->milkDetail?->motherParty;
+        $isRelay = $job->isRelay();
 
         return [
-            'id' => $this->id,
-            'reference' => $this->reference,
-            'status' => $this->status->value,
-            'jobType' => $this->job_type->value,
-            'milkLitres' => $this->milk_litres,
-            // Deliberately not role-gated: every role that can view jobs is told so they can be sensitive. The mother's contact below is the gated part.
-            'isBereavement' => $this->is_bereavement,
+            'id' => $job->id,
+            'reference' => $job->reference,
+            'status' => $job->status->value,
+            'jobType' => $job->job_type->value,
+            'milkLitres' => $job->milkDetail?->milk_litres,
+            'isBereavement' => $job->is_bereavement,
             'isRelay' => $isRelay,
-            'parentJobId' => $this->parent_job_id,
-            'legNumber' => $this->leg_number,
+            'parentJobId' => null,
+            'legNumber' => null,
             'sender' => [
-                'name' => $this->sender_name,
-                'phone' => $this->sender_phone,
-                'organisation' => $this->sender_organisation,
+                'name' => $sender?->name,
+                'phone' => $sender?->phone,
+                'organisation' => $sender?->organisation,
             ],
-            // Personal data about a member of the public: only roles that can create jobs (admin, controller) get the key at all.
             'mother' => $this->when(
-                RequestRoles::hasCapability($request, Capability::CreateJob),
-                fn () => $this->job_type === JobType::Milk ? [
-                    'name' => $this->mother_name,
-                    'phone' => $this->mother_phone,
-                    'secondaryPhone' => $this->mother_phone_secondary,
+                RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
+                fn () => $job->job_type === JobType::Milk ? [
+                    'name' => $motherParty?->name,
+                    'phone' => $motherParty?->phone,
+                    'secondaryPhone' => $motherParty?->phone_secondary,
                 ] : null,
             ),
-            'collection' => [
-                'placeId' => $collection?->external_id,
-                'address' => $collection?->address,
-                'postcode' => $collection?->postcode,
-                'latitude' => $collection?->latitude,
-                'longitude' => $collection?->longitude,
-                'notes' => $this->collection_notes,
-            ],
-            'delivery' => [
-                'placeId' => $delivery?->external_id,
-                'address' => $delivery?->address,
-                'postcode' => $delivery?->postcode,
-                'latitude' => $delivery?->latitude,
-                'longitude' => $delivery?->longitude,
-                'notes' => $this->delivery_notes,
-            ],
-            'estimatedCollectionAt' => $this->estimated_collection_at?->toIso8601String(),
-            'estimatedDeliveryAt' => $this->estimated_delivery_at?->toIso8601String(),
-            'plannedArrivalAt' => $this->planned_arrival_at?->toIso8601String(),
-            // The arranged day and time of the collection. Operational detail every role that sees the job may see, like the estimates above.
-            'scheduledCollectionAt' => $this->scheduled_collection_at?->toIso8601String(),
-            // Whether the controller still has to call the mother. Only the roles that can create jobs (and see the mother's contact) are told.
+            'collection' => $this->placePayload($collection, null),
+            'delivery' => $this->placePayload($delivery, null),
+            'estimatedCollectionAt' => null,
+            'estimatedDeliveryAt' => null,
+            'plannedArrivalAt' => null,
+            'scheduledCollectionAt' => $job->scheduled_collection_at?->toIso8601String(),
             'needsMotherContact' => $this->when(
-                RequestRoles::hasCapability($request, Capability::CreateJob),
-                fn () => $this->needsMotherContact(),
+                RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
+                fn () => $job->needsMotherContact(),
             ),
-            'contents' => $this->contents,
+            'contents' => $job->content_label_snapshot,
             'serviceAreas' => $this->whenLoaded(
                 'serviceAreas',
-                fn () => $this->serviceAreas->pluck('code')->values()->all(),
+                fn () => $job->serviceAreas->pluck('code')->values()->all(),
                 [],
             ),
-            'createdAt' => $this->created_at?->toIso8601String(),
-            'allocatedRider' => $this->operational_shift_id === null ? null : [
+            'createdAt' => $job->created_at?->toIso8601String(),
+            'allocatedRider' => null,
+            'collectionRecord' => null,
+            'deliveryRecord' => null,
+            'cancellation' => null,
+            'legs' => $this->when(
+                $isRelay && $job->relationLoaded('legs'),
+                fn () => DeliveryJobResource::collection($job->legs),
+            ),
+            'waitingForLeg' => null,
+            'allowedActions' => $job->allowedActionNames(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function legToArray(Request $httpRequest, DeliveryLeg $leg): array
+    {
+        $deliveryRequest = $leg->request;
+        $collection = $leg->collectionPlace;
+        $delivery = $leg->deliveryPlace;
+        $shift = $leg->operationalShift;
+        $rider = $shift?->rider;
+        $sender = $deliveryRequest?->senderParty;
+        $motherParty = $deliveryRequest?->milkDetail?->motherParty;
+        $isRelayLeg = $leg->requestIsRelay();
+
+        return [
+            'id' => $leg->id,
+            'reference' => $leg->reference,
+            'status' => $leg->status->value,
+            'jobType' => $deliveryRequest?->job_type->value,
+            'milkLitres' => $deliveryRequest?->milkDetail?->milk_litres,
+            'isBereavement' => (bool) ($deliveryRequest?->is_bereavement ?? false),
+            'isRelay' => false,
+            'parentJobId' => $leg->apiParentJobId(),
+            'legNumber' => $leg->apiLegNumber(),
+            'sender' => [
+                'name' => $sender?->name,
+                'phone' => $sender?->phone,
+                'organisation' => $sender?->organisation,
+            ],
+            'mother' => $this->when(
+                RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
+                fn () => $deliveryRequest?->job_type === JobType::Milk ? [
+                    'name' => $motherParty?->name,
+                    'phone' => $motherParty?->phone,
+                    'secondaryPhone' => $motherParty?->phone_secondary,
+                ] : null,
+            ),
+            'collection' => $this->placePayload($collection, $leg->collection_notes),
+            'delivery' => $this->placePayload($delivery, $leg->delivery_notes),
+            'estimatedCollectionAt' => $leg->estimated_collection_at?->toIso8601String(),
+            'estimatedDeliveryAt' => $leg->estimated_delivery_at?->toIso8601String(),
+            'plannedArrivalAt' => $leg->planned_arrival_at?->toIso8601String(),
+            'scheduledCollectionAt' => $deliveryRequest?->scheduled_collection_at?->toIso8601String(),
+            'needsMotherContact' => $this->when(
+                RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
+                fn () => $leg->needsMotherContact(),
+            ),
+            'contents' => $deliveryRequest?->content_label_snapshot,
+            'serviceAreas' => $deliveryRequest?->relationLoaded('serviceAreas')
+                ? $deliveryRequest->serviceAreas->pluck('code')->values()->all()
+                : [],
+            'createdAt' => $leg->created_at?->toIso8601String(),
+            'allocatedRider' => $leg->operational_shift_id === null ? null : [
                 'id' => (string) ($rider?->external_id),
                 'name' => $rider?->name,
-                'shiftId' => $this->operational_shift_id,
-                'allocatedAt' => $this->allocated_at?->toIso8601String(),
+                'shiftId' => $leg->operational_shift_id,
+                'allocatedAt' => $leg->allocated_at?->toIso8601String(),
             ],
-            'collectionRecord' => $this->collected_at === null ? null : [
-                'contentsConfirmed' => $this->contents_confirmed,
-                'receiptNumber' => $this->receipt_number,
-                'collectedAt' => $this->collected_at?->toIso8601String(),
+            'collectionRecord' => $leg->collected_at === null ? null : [
+                'contentsConfirmed' => $leg->contents_confirmed,
+                'receiptNumber' => $leg->receipt_number,
+                'collectedAt' => $leg->collected_at?->toIso8601String(),
             ],
-            'deliveryRecord' => $this->delivered_at === null ? null : [
-                'recipient' => $this->no_recipient ? null : $this->recipient,
-                'noRecipient' => $this->no_recipient,
-                'deliveredAt' => $this->delivered_at?->toIso8601String(),
+            'deliveryRecord' => $leg->delivered_at === null ? null : [
+                'recipient' => $leg->no_recipient ? null : $leg->recipient,
+                'noRecipient' => $leg->no_recipient,
+                'deliveredAt' => $leg->delivered_at?->toIso8601String(),
             ],
-            'cancellation' => $this->cancelled_at === null ? null : [
-                'reason' => $this->cancellation_reason,
-                'cancelledAt' => $this->cancelled_at?->toIso8601String(),
+            'cancellation' => $leg->cancelled_at === null ? null : [
+                'reason' => $leg->cancellation_reason,
+                'cancelledAt' => $leg->cancelled_at?->toIso8601String(),
             ],
-            'legs' => $this->when(
-                $isRelay && $this->relationLoaded('legs'),
-                fn () => DeliveryJobResource::collection($this->legs),
-            ),
-            // The earlier leg this one is waiting on before it can be collected or delivered; null when free to go.
-            'waitingForLeg' => $this->waitingForLeg(),
-            'allowedActions' => $this->allowedActionNames(),
+            'waitingForLeg' => $leg->waitingForLeg(),
+            'allowedActions' => $leg->allowedActionNames(),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function placePayload(?Place $place, ?string $notes): array
+    {
+        return [
+            'placeId' => $place?->external_id,
+            'address' => $place?->address,
+            'postcode' => $place?->postcode,
+            'latitude' => $place?->latitude,
+            'longitude' => $place?->longitude,
+            'notes' => $notes,
         ];
     }
 }

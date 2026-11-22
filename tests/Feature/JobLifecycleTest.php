@@ -105,7 +105,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonPath('deliveryRecord.recipient', 'Dr Patel')
             ->assertJsonPath('allowedActions', []);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'id' => $job->id,
             'status' => JobStatus::Delivered->value,
             'operational_shift_id' => $shift->id,
@@ -151,9 +151,9 @@ class JobLifecycleTest extends TestCase
 
     public function test_delivery_jobs_table_has_no_seal_columns(): void
     {
-        $this->assertFalse(Schema::hasColumn('delivery_jobs', 'suitably_sealed'));
-        $this->assertFalse(Schema::hasColumn('delivery_jobs', 'seal_number'));
-        $this->assertTrue(Schema::hasColumn('delivery_jobs', 'receipt_number'));
+        $this->assertFalse(Schema::hasColumn('delivery_legs', 'suitably_sealed'));
+        $this->assertFalse(Schema::hasColumn('delivery_legs', 'seal_number'));
+        $this->assertTrue(Schema::hasColumn('delivery_legs', 'receipt_number'));
     }
 
     public function test_invalid_transitions_are_rejected_with_allowed_actions(): void
@@ -219,7 +219,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonPath('deliveryRecord.recipient', null)
             ->assertJsonPath('deliveryRecord.noRecipient', true);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'id' => $job->id,
             'status' => JobStatus::Delivered->value,
             'recipient' => null,
@@ -243,7 +243,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonPath('deliveryRecord.recipient', null)
             ->assertJsonPath('deliveryRecord.noRecipient', true);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'id' => $job->id,
             'recipient' => null,
             'no_recipient' => true,
@@ -298,7 +298,7 @@ class JobLifecycleTest extends TestCase
             ->assertJsonPath('deliveryRecord.noRecipient', false)
             ->assertJsonPath('deliveryRecord.recipient', 'Dr Patel');
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'id' => $job->id,
             'recipient' => 'Dr Patel',
             'no_recipient' => false,
@@ -322,7 +322,7 @@ class JobLifecycleTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['recipient']);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'id' => $job->id,
             'status' => JobStatus::Collected->value,
         ]);

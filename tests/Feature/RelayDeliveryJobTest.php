@@ -8,6 +8,7 @@ use App\Enums\JobStatus;
 use App\Http\Resources\DeliveryJobResource;
 use App\Models\Bike;
 use App\Models\DeliveryJob;
+use App\Models\DeliveryRequest;
 use App\Models\OperationalShift;
 use App\Models\Rider;
 use App\Models\User;
@@ -117,15 +118,16 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.delivery.notes', null)
             ->assertJsonPath('legs.1.collection.notes', null)
             ->assertJsonPath('legs.1.delivery.notes', null)
-            ->assertJsonPath('estimatedCollectionAt', '2026-11-20T09:30:00+00:00')
-            ->assertJsonPath('estimatedDeliveryAt', '2026-11-20T11:00:00+00:00')
+            ->assertJsonPath('estimatedCollectionAt', null)
+            ->assertJsonPath('estimatedDeliveryAt', null)
             ->assertJsonPath('legs.0.estimatedCollectionAt', null)
             ->assertJsonPath('legs.0.estimatedDeliveryAt', null)
             ->assertJsonPath('legs.1.estimatedCollectionAt', null)
             ->assertJsonPath('legs.1.estimatedDeliveryAt', null);
 
-        $this->assertTrue($job->fresh()->isRelayParent());
-        $this->assertSame(3, DeliveryJob::query()->count());
+        $this->assertNull($job->fresh());
+        $this->assertTrue(DeliveryRequest::query()->findOrFail($job->id)->isRelay());
+        $this->assertSame(2, DeliveryJob::query()->count());
     }
 
     public function test_relay_legs_inherit_the_job_type_and_litres_of_a_milk_job(): void
@@ -156,11 +158,15 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.1.jobType', 'milk')
             ->assertJsonPath('legs.1.milkLitres', 2.5);
 
-        $this->assertSame(2, DeliveryJob::query()
-            ->where('parent_job_id', $job->id)
-            ->where('job_type', 'milk')
-            ->where('milk_litres', 2.5)
-            ->count());
+        $this->assertSame(2, DeliveryJob::query()->where('request_id', $job->id)->count());
+        $this->assertDatabaseHas('delivery_requests', [
+            'id' => $job->id,
+            'job_type' => 'milk',
+        ]);
+        $this->assertDatabaseHas('milk_job_details', [
+            'delivery_request_id' => $job->id,
+            'milk_litres' => 2.5,
+        ]);
     }
 
     public function test_relay_legs_inherit_the_mothers_contact_of_a_milk_job(): void
@@ -193,12 +199,12 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.mother', $mother)
             ->assertJsonPath('legs.1.mother', $mother);
 
-        $this->assertSame(2, DeliveryJob::query()
-            ->where('parent_job_id', $job->id)
-            ->where('mother_name', 'Megan Evans')
-            ->where('mother_phone', '07700 900101')
-            ->where('mother_phone_secondary', '029 2018 0000')
-            ->count());
+        $this->assertSame(2, DeliveryJob::query()->where('request_id', $job->id)->count());
+        $this->assertDatabaseHas('parties', [
+            'name' => 'Megan Evans',
+            'phone' => '07700 900101',
+            'phone_secondary' => '029 2018 0000',
+        ]);
     }
 
     public function test_relay_legs_inherit_the_bereavement_flag_of_a_milk_job(): void
@@ -225,10 +231,11 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.0.isBereavement', true)
             ->assertJsonPath('legs.1.isBereavement', true);
 
-        $this->assertSame(2, DeliveryJob::query()
-            ->where('parent_job_id', $job->id)
-            ->where('is_bereavement', true)
-            ->count());
+        $this->assertSame(2, DeliveryJob::query()->where('request_id', $job->id)->count());
+        $this->assertDatabaseHas('delivery_requests', [
+            'id' => $job->id,
+            'is_bereavement' => true,
+        ]);
     }
 
     public function test_relay_legs_of_a_standard_job_stay_standard_without_litres(): void
@@ -295,7 +302,7 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.1.plannedArrivalAt', '2026-06-20T11:45:00+00:00')
             ->assertJsonPath('legs.2.plannedArrivalAt', null);
 
-        $legs = DeliveryJob::query()->where('parent_job_id', $job->id)->orderBy('leg_number')->get();
+        $legs = DeliveryJob::query()->where('request_id', $job->id)->orderBy('leg_number')->get();
         $this->assertSame('2026-11-20 10:15:00', $legs[0]->planned_arrival_at?->utc()->format('Y-m-d H:i:s'));
         $this->assertSame('2026-06-20 11:45:00', $legs[1]->planned_arrival_at?->utc()->format('Y-m-d H:i:s'));
         $this->assertNull($legs[2]->planned_arrival_at);
@@ -304,7 +311,8 @@ class RelayDeliveryJobTest extends TestCase
             $this->assertNull($leg->collected_at);
             $this->assertNull($leg->delivered_at);
         }
-        $this->assertNull($job->fresh()->planned_arrival_at);
+        $this->assertNull($job->fresh());
+        $this->assertTrue(DeliveryRequest::query()->findOrFail($job->id)->isRelay());
     }
 
     public function test_relay_legs_carry_postcodes_from_the_job_and_the_rendezvous_points(): void
@@ -435,7 +443,8 @@ class RelayDeliveryJobTest extends TestCase
             ])
             ->assertOk();
 
-        $legs = DeliveryJob::query()->where('parent_job_id', $job->id)->orderBy('leg_number')->get();
+        $request = DeliveryRequest::query()->findOrFail($job->id);
+        $legs = DeliveryJob::query()->where('request_id', $request->id)->orderBy('leg_number')->get();
         $firstLeg = $legs[0];
         $secondLeg = $legs[1];
 
@@ -443,8 +452,8 @@ class RelayDeliveryJobTest extends TestCase
             ->postJson("/api/jobs/{$firstLeg->id}/actions/allocate", ['shiftId' => $shiftOne->id])
             ->assertOk();
 
-        $job->refresh();
-        $this->assertSame(JobStatus::New->value, $job->status->value);
+        $request->refresh();
+        $this->assertSame(JobStatus::New->value, $request->status->value);
 
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$firstLeg->id}/actions/collect", [
@@ -454,8 +463,8 @@ class RelayDeliveryJobTest extends TestCase
             ])
             ->assertOk();
 
-        $job->refresh();
-        $this->assertSame(JobStatus::New->value, $job->status->value);
+        $request->refresh();
+        $this->assertSame(JobStatus::New->value, $request->status->value);
 
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$firstLeg->id}/actions/deliver", [
@@ -464,15 +473,15 @@ class RelayDeliveryJobTest extends TestCase
             ])
             ->assertOk();
 
-        $job->refresh();
-        $this->assertSame(JobStatus::New->value, $job->status->value);
+        $request->refresh();
+        $this->assertSame(JobStatus::New->value, $request->status->value);
 
         $this->withToken('valid-token')
             ->postJson("/api/jobs/{$secondLeg->id}/actions/allocate", ['shiftId' => $shiftTwo->id])
             ->assertOk();
 
-        $job->refresh();
-        $this->assertSame(JobStatus::Allocated->value, $job->status->value);
+        $request->refresh();
+        $this->assertSame(JobStatus::Allocated->value, $request->status->value);
     }
 
     public function test_relay_legs_are_hidden_from_top_level_job_lists(): void
@@ -529,7 +538,7 @@ class RelayDeliveryJobTest extends TestCase
         $job = DeliveryJob::factory()->create(['reference' => 'JB-0203']);
         DeliveryJob::factory()->create([
             'reference' => 'JB-0203-L1',
-            'parent_job_id' => $job->id,
+            'request_id' => $job->id,
             'leg_number' => 1,
         ]);
         $shift = OperationalShift::factory()->create();
@@ -665,16 +674,17 @@ class RelayDeliveryJobTest extends TestCase
 
     public function test_the_previous_leg_is_found_by_leg_number_not_by_load_order(): void
     {
-        $parent = DeliveryJob::factory()->create();
+        $seed = DeliveryJob::factory()->create();
+        $requestId = $seed->request_id;
         // Created out of order, so insertion order and leg_number disagree.
-        $third = DeliveryJob::factory()->allocated()->create(['parent_job_id' => $parent->id, 'leg_number' => 3]);
-        $first = DeliveryJob::factory()->delivered()->create(['parent_job_id' => $parent->id, 'leg_number' => 1]);
-        $second = DeliveryJob::factory()->collected()->create(['parent_job_id' => $parent->id, 'leg_number' => 2]);
+        $third = DeliveryJob::factory()->allocated()->create(['request_id' => $requestId, 'leg_number' => 3]);
+        $first = DeliveryJob::factory()->delivered()->create(['request_id' => $requestId, 'leg_number' => 1]);
+        $second = DeliveryJob::factory()->collected()->create(['request_id' => $requestId, 'leg_number' => 2]);
 
         $loaded = DeliveryJob::query()->with('parentJob.legs')->findOrFail($third->id);
-        $parent->load('legs');
-        $parent->setRelation('legs', $parent->legs->reverse()->values());
-        $loaded->parentJob->setRelation('legs', $parent->legs);
+        $request = DeliveryRequest::query()->with('legs')->findOrFail($requestId);
+        $request->setRelation('legs', $request->legs->reverse()->values());
+        $loaded->parentJob->setRelation('legs', $request->legs);
 
         $this->assertSame($second->id, $loaded->previousLeg()?->id);
         $this->assertSame(2, $loaded->waitingForLeg());
@@ -734,17 +744,28 @@ class RelayDeliveryJobTest extends TestCase
     public function test_a_finished_relay_cannot_be_cancelled_again_and_is_left_untouched(JobStatus $status): void
     {
         $recordedAt = now()->subHours(30)->startOfSecond();
-        $parent = DeliveryJob::factory()->create([
+        $seed = DeliveryJob::factory()->create([
             'reference' => 'JB-0300',
             'status' => $status,
+            'updated_at' => $recordedAt,
+        ]);
+        $requestId = $seed->request_id;
+        DeliveryJob::factory()->create([
+            'status' => $status,
+            'request_id' => $requestId,
+            'leg_number' => 1,
+            'reference' => 'JB-0300-L1',
             'cancelled_at' => $status === JobStatus::Cancelled ? $recordedAt : null,
             'cancellation_reason' => $status === JobStatus::Cancelled ? 'Original reason' : null,
             'updated_at' => $recordedAt,
         ]);
         DeliveryJob::factory()->create([
             'status' => $status,
-            'parent_job_id' => $parent->id,
-            'leg_number' => 1,
+            'request_id' => $requestId,
+            'leg_number' => 2,
+            'reference' => 'JB-0300-L2',
+            'cancelled_at' => $status === JobStatus::Cancelled ? $recordedAt : null,
+            'cancellation_reason' => $status === JobStatus::Cancelled ? 'Original reason' : null,
             'updated_at' => $recordedAt,
         ]);
 
@@ -752,15 +773,18 @@ class RelayDeliveryJobTest extends TestCase
         $this->mockVerifiedClaims();
 
         $this->withToken('valid-token')
-            ->postJson("/api/jobs/{$parent->id}/cancel", ['reason' => 'Changed my mind'])
+            ->postJson("/api/jobs/{$requestId}/cancel", ['reason' => 'Changed my mind'])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('action');
 
         // Completed jobs are not edited, so updated_at stays the time the completion was recorded.
-        $parent->refresh();
-        $this->assertSame($status, $parent->status);
-        $this->assertTrue($parent->updated_at->equalTo($recordedAt));
-        $this->assertSame($status === JobStatus::Cancelled ? 'Original reason' : null, $parent->cancellation_reason);
+        $request = DeliveryRequest::query()->findOrFail($requestId);
+        $this->assertSame($status, $request->status);
+        $this->assertTrue($request->updated_at->equalTo($recordedAt));
+        $this->assertSame(
+            $status === JobStatus::Cancelled ? 'Original reason' : null,
+            DeliveryJob::query()->where('request_id', $requestId)->value('cancellation_reason'),
+        );
     }
 
     /**
@@ -799,33 +823,37 @@ class RelayDeliveryJobTest extends TestCase
             ->assertJsonPath('legs.1.allowedActions', []);
     }
 
-    public function test_delivery_jobs_are_indexed_by_parent_and_leg_number(): void
+    public function test_delivery_legs_are_indexed_by_request_and_leg_number(): void
     {
-        $this->assertTrue(Schema::hasIndex('delivery_jobs', ['parent_job_id', 'leg_number'], 'unique'));
+        $this->assertTrue(Schema::hasIndex('delivery_legs', ['request_id', 'leg_number'], 'unique'));
     }
 
     /**
-     * Builds a relay parent whose legs (numbered from 1) take the given statuses.
+     * Builds a multi-leg request whose hops (numbered from 1) take the given statuses.
      *
      * @param  list<JobStatus>  $statuses
-     * @return array{0: DeliveryJob, 1: list<DeliveryJob>}
+     * @return array{0: DeliveryRequest, 1: list<DeliveryJob>}
      */
     private function relayWithLegs(array $statuses): array
     {
-        $parent = DeliveryJob::factory()->create();
+        $seed = DeliveryJob::factory()->create();
+        $requestId = $seed->request_id;
+        $reference = $seed->request->reference;
 
         $legs = [];
         foreach ($statuses as $index => $status) {
             $legs[] = DeliveryJob::factory()->create([
                 'status' => $status,
-                'parent_job_id' => $parent->id,
+                'request_id' => $requestId,
                 'leg_number' => $index + 1,
+                'reference' => sprintf('%s-L%d', $reference, $index + 1),
             ]);
         }
 
-        $parent->update(['status' => JobStatus::Allocated]);
+        $request = DeliveryRequest::query()->findOrFail($requestId);
+        $request->update(['status' => JobStatus::Allocated]);
 
-        return [$parent, $legs];
+        return [$request->fresh(['legs']), $legs];
     }
 
     /**

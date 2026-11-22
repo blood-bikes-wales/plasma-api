@@ -3,13 +3,13 @@
 namespace App\Services\Jobs;
 
 use App\Enums\JobStatus;
-use App\Models\DeliveryJob;
+use App\Models\DeliveryLeg;
 use Illuminate\Support\Collection;
 
 final class RelayJobStatusAggregator
 {
     /**
-     * @param  Collection<int, DeliveryJob>  $legs
+     * @param  Collection<int, DeliveryLeg>  $legs
      */
     public function aggregate(Collection $legs): JobStatus
     {
@@ -17,7 +17,7 @@ final class RelayJobStatusAggregator
             return JobStatus::New;
         }
 
-        $statuses = $legs->map(static fn (DeliveryJob $leg): JobStatus => $leg->status);
+        $statuses = $legs->map(static fn (DeliveryLeg $leg): JobStatus => $leg->status);
 
         if ($statuses->every(static fn (JobStatus $status): bool => $status === JobStatus::Cancelled)) {
             return JobStatus::Cancelled;

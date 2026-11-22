@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
+use App\Models\DeliveryRequest;
 use App\Models\User;
 use App\Models\UserSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -228,14 +229,18 @@ class ShowDeliveryJobTest extends TestCase
         );
     }
 
-    private function relayWithLegs(int $count): DeliveryJob
+    private function relayWithLegs(int $count): DeliveryRequest
     {
-        $parent = DeliveryJob::factory()->create();
+        $seed = DeliveryJob::factory()->create();
+        $requestId = $seed->request_id;
         foreach (range(1, $count) as $number) {
-            DeliveryJob::factory()->create(['parent_job_id' => $parent->id, 'leg_number' => $number]);
+            DeliveryJob::factory()->create([
+                'request_id' => $requestId,
+                'leg_number' => $number,
+            ]);
         }
 
-        return $parent;
+        return DeliveryRequest::query()->with('legs')->findOrFail($requestId);
     }
 
     private function queriesFor(string $path): int

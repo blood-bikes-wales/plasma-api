@@ -209,15 +209,20 @@ class ListDeliveryJobsTest extends TestCase
     public function test_a_future_relay_parent_is_listed_once_without_its_legs_as_separate_jobs(): void
     {
         Carbon::setTestNow('2026-08-29 10:00:00');
-        $parent = DeliveryJob::factory()->create([
+        $seed = DeliveryJob::factory()->create([
             'reference' => 'JB-1070',
             'scheduled_collection_at' => '2026-09-05 10:00:00',
         ]);
+        $requestId = $seed->request_id;
         DeliveryJob::factory()->create([
             'reference' => 'JB-1070-L1',
-            'parent_job_id' => $parent->id,
+            'request_id' => $requestId,
             'leg_number' => 1,
-            'scheduled_collection_at' => '2026-09-05 10:00:00',
+        ]);
+        DeliveryJob::factory()->create([
+            'reference' => 'JB-1070-L2',
+            'request_id' => $requestId,
+            'leg_number' => 2,
         ]);
 
         $this->fakeDirectory($this->volunteer('Controller'));

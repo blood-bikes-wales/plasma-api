@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\MileageReadingKind;
 use App\Models\Concerns\HasUuidPrimaryKey;
 use Database\Factories\MileageReadingFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
     'operational_shift_id',
+    'kind',
     'mileage',
     'reason',
     'recorded_at',
@@ -27,6 +29,7 @@ class MileageReading extends Model
     protected function casts(): array
     {
         return [
+            'kind' => MileageReadingKind::class,
             'mileage' => 'integer',
             'recorded_at' => 'datetime',
         ];

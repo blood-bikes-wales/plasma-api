@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\Bike;
+use App\Models\MileageReading;
 use App\Models\OperationalShift;
 use App\Models\Rider;
 use App\Models\ServiceArea;
@@ -124,6 +125,7 @@ class ShiftTypeTest extends TestCase
         ];
 
         foreach ($failures as $label => $failure) {
+            MileageReading::query()->delete();
             OperationalShift::query()->delete();
             Rider::query()->delete();
             $this->app['cache']->flush();
