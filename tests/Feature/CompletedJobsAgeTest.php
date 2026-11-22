@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\JobStatus;
 use App\Models\DeliveryJob;
+use App\Models\DeliveryRequest;
 use App\Models\User;
 use App\Models\UserSetting;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -191,8 +192,8 @@ class CompletedJobsAgeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('deliveryRecord.deliveredAt', '2026-11-20T10:15:00+00:00');
 
-        $this->assertSame('2026-11-20 09:30:00', DB::table('delivery_jobs')->where('id', $job->id)->value('collected_at'));
-        $this->assertSame('2026-11-20 10:15:00', DB::table('delivery_jobs')->where('id', $job->id)->value('delivered_at'));
+        $this->assertSame('2026-11-20 09:30:00', DB::table('delivery_legs')->where('id', $job->id)->value('collected_at'));
+        $this->assertSame('2026-11-20 10:15:00', DB::table('delivery_legs')->where('id', $job->id)->value('delivered_at'));
     }
 
     public function test_a_relay_is_filtered_as_one_job_by_its_own_completion_time(): void
@@ -216,18 +217,19 @@ class CompletedJobsAgeTest extends TestCase
     public function test_a_relay_with_a_delivered_leg_and_an_individually_cancelled_leg_is_listed_via_updated_at(): void
     {
         // Leg 1 was delivered long ago (claiming a time over a day old); leg 2 is cancelled just now, which
-        // rolls the parent up to Delivered. The parent has neither delivered_at nor cancelled_at.
-        $parent = DeliveryJob::factory()->collected()->create(['reference' => 'JB-2500', 'updated_at' => now()->subDays(2)]);
+        // rolls the request up to Delivered. The request has neither delivered_at nor cancelled_at.
+        $seed = DeliveryJob::factory()->collected()->create(['reference' => 'JB-2500', 'updated_at' => now()->subDays(2)]);
+        $requestId = $seed->request_id;
         DeliveryJob::factory()->delivered()->create([
             'reference' => 'JB-2500-L1',
-            'parent_job_id' => $parent->id,
+            'request_id' => $requestId,
             'leg_number' => 1,
             'delivered_at' => now()->subHours(30),
             'updated_at' => now()->subHours(30),
         ]);
         $second = DeliveryJob::factory()->collected()->create([
             'reference' => 'JB-2500-L2',
-            'parent_job_id' => $parent->id,
+            'request_id' => $requestId,
             'leg_number' => 2,
         ]);
 
@@ -237,10 +239,8 @@ class CompletedJobsAgeTest extends TestCase
             ->postJson("/api/jobs/{$second->id}/cancel", ['reason' => 'Rider unavailable'])
             ->assertOk();
 
-        $parent->refresh();
-        $this->assertSame(JobStatus::Delivered, $parent->status);
-        $this->assertNull($parent->delivered_at);
-        $this->assertNull($parent->cancelled_at);
+        $request = DeliveryRequest::query()->findOrFail($requestId);
+        $this->assertSame(JobStatus::Delivered, $request->status);
 
         $this->assertReferences(['JB-2500'], $this->listCompleted());
 
@@ -317,25 +317,33 @@ class CompletedJobsAgeTest extends TestCase
         $at = now()->subHours($hoursAgo);
         $completion = $status === JobStatus::Delivered ? 'delivered_at' : 'cancelled_at';
 
-        $parent = DeliveryJob::factory()->create([
+        $seed = DeliveryJob::factory()->create([
             'reference' => $reference,
             'status' => $status,
-            'cancelled_at' => $status === JobStatus::Cancelled ? $at : null,
             'updated_at' => $at,
         ]);
+        $requestId = $seed->request_id;
 
         foreach ([1, 2] as $number) {
             DeliveryJob::factory()->create([
                 'reference' => "{$reference}-L{$number}",
                 'status' => $status,
-                'parent_job_id' => $parent->id,
+                'request_id' => $requestId,
                 'leg_number' => $number,
                 $completion => $at,
                 'updated_at' => $at,
             ]);
         }
 
-        return $parent;
+        DeliveryRequest::withoutTimestamps(function () use ($requestId, $status, $at): void {
+            DeliveryRequest::query()->whereKey($requestId)->update([
+                'status' => $status->value,
+                'updated_at' => $at,
+            ]);
+        });
+
+        // Standalone id still resolves the request after the sole shared-id hop is replaced.
+        return DeliveryJob::query()->where('request_id', $requestId)->orderBy('leg_number')->firstOrFail();
     }
 
     private function turnOnShowCompletedJobs(): void

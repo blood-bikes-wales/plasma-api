@@ -3,6 +3,7 @@
 namespace App\Services\Shifts;
 
 use App\Enums\BikeKeptAt;
+use App\Enums\MileageReadingKind;
 use App\Models\Bike;
 use App\Models\MileageReading;
 use App\Models\OperationalShift;
@@ -45,7 +46,7 @@ final class OperationalShiftService
     {
         return OperationalShift::query()
             ->active()
-            ->with(['bike', 'rider'])
+            ->with(['bike', 'rider', 'startMileageReading'])
             ->orderBy('logged_on_at')
             ->get();
     }
@@ -105,6 +106,7 @@ final class OperationalShiftService
 
         try {
             $shift = DB::transaction(fn (): OperationalShift => $this->attachBike(
+                $actor,
                 $shift,
                 $volunteer,
                 $bikeId,
@@ -174,25 +176,36 @@ final class OperationalShiftService
             $this->assertBikeCanBeUsed($bike, $volunteer, $startMileage, $reason);
         }
 
+        $loggedOnAt = now();
+
         $shift = OperationalShift::query()->create([
             'rider_id' => $rider->id,
             'bike_id' => $bike?->id,
-            'start_mileage' => $bike === null ? null : $startMileage,
-            'mileage_variance_reason' => $bike === null || $startMileage === null
-                ? null
-                : $this->storedMileageVarianceReason($bike, $startMileage, $reason),
             'shift_type' => $shiftType,
-            'logged_on_at' => now(),
+            'logged_on_at' => $loggedOnAt,
             'logged_on_by_user_id' => $actor->id,
         ]);
 
+        if ($bike !== null && $startMileage !== null) {
+            $this->recordMileage(
+                $shift,
+                MileageReadingKind::Start,
+                $startMileage,
+                $this->storedMileageVarianceReason($bike, $startMileage, $reason),
+                $loggedOnAt,
+                $actor,
+            );
+        }
+
         $shift->setRelation('bike', $bike);
         $shift->setRelation('rider', $rider);
+        $shift->load('startMileageReading');
 
         return $shift;
     }
 
     private function attachBike(
+        User $actor,
         OperationalShift $shift,
         Volunteer $volunteer,
         string $bikeId,
@@ -213,11 +226,19 @@ final class OperationalShiftService
 
         $locked->fill([
             'bike_id' => $bike->id,
-            'start_mileage' => $startMileage,
-            'mileage_variance_reason' => $this->storedMileageVarianceReason($bike, $startMileage, $reason),
         ])->save();
 
+        $this->recordMileage(
+            $locked,
+            MileageReadingKind::Start,
+            $startMileage,
+            $this->storedMileageVarianceReason($bike, $startMileage, $reason),
+            $locked->logged_on_at,
+            $actor,
+        );
+
         $locked->setRelation('bike', $bike);
+        $locked->load('startMileageReading');
 
         return $locked;
     }
@@ -262,27 +283,58 @@ final class OperationalShiftService
             ]);
         }
 
-        $this->assertEndMileageNotBelowStart($locked, $endMileage);
-        $this->assertMileageExplanationGiven($locked, $endMileage, $mileageExplanation);
+        $startMileage = $locked->startMileage();
+        if ($startMileage === null) {
+            throw ValidationException::withMessages([
+                'endMileage' => ['This shift has no start mileage.'],
+            ]);
+        }
+
+        $this->assertEndMileageNotBelowStart($startMileage, $endMileage);
+        $this->assertMileageExplanationGiven($startMileage, $endMileage, $mileageExplanation);
 
         $locked->fill([
             'logged_off_at' => $loggedOffAt,
-            'end_mileage' => $endMileage,
             'faults' => $faults,
             'bike_kept_at' => $bikeKeptAt ?? BikeKeptAt::Lockup,
-            'end_mileage_reason' => $this->isSillyMileageChange($locked, $endMileage) ? $mileageExplanation : null,
             'logged_off_by_user_id' => $actor->id,
         ])->save();
 
-        MileageReading::query()->create([
-            'operational_shift_id' => $locked->id,
-            'mileage' => $endMileage,
-            'reason' => $locked->mileage_variance_reason,
-            'recorded_at' => $loggedOffAt,
-            'recorded_by_user_id' => $actor->id,
-        ]);
+        $endReason = null;
+        if ($this->isSillyMileageChange($startMileage, $endMileage)) {
+            $endReason = $mileageExplanation;
+        }
+
+        $this->recordMileage(
+            $locked,
+            MileageReadingKind::End,
+            $endMileage,
+            $endReason,
+            $loggedOffAt,
+            $actor,
+        );
+
+        $locked->load(['startMileageReading', 'endMileageReading']);
 
         return $locked;
+    }
+
+    private function recordMileage(
+        OperationalShift $shift,
+        MileageReadingKind $kind,
+        int $mileage,
+        ?string $reason,
+        CarbonInterface $recordedAt,
+        User $actor,
+    ): void {
+        MileageReading::query()->create([
+            'operational_shift_id' => $shift->id,
+            'kind' => $kind,
+            'mileage' => $mileage,
+            'reason' => $reason,
+            'recorded_at' => $recordedAt,
+            'recorded_by_user_id' => $actor->id,
+        ]);
     }
 
     private function upsertRider(Volunteer $volunteer): Rider
@@ -327,7 +379,7 @@ final class OperationalShiftService
     {
         /** @var OperationalShift|null $locked */
         $locked = OperationalShift::query()
-            ->with(['bike', 'rider'])
+            ->with(['bike', 'rider', 'startMileageReading'])
             ->whereKey($shiftId)
             ->lockForUpdate()
             ->first();
@@ -459,27 +511,27 @@ final class OperationalShiftService
         }
     }
 
-    private function assertEndMileageNotBelowStart(OperationalShift $shift, int $endMileage): void
+    private function assertEndMileageNotBelowStart(int $startMileage, int $endMileage): void
     {
-        if ($endMileage < $shift->start_mileage) {
+        if ($endMileage < $startMileage) {
             throw ValidationException::withMessages([
-                'endMileage' => ["End mileage cannot be lower than the start mileage of {$shift->start_mileage}."],
+                'endMileage' => ["End mileage cannot be lower than the start mileage of {$startMileage}."],
             ]);
         }
     }
 
-    private function assertMileageExplanationGiven(OperationalShift $shift, int $endMileage, ?string $explanation): void
+    private function assertMileageExplanationGiven(int $startMileage, int $endMileage, ?string $explanation): void
     {
-        if ($this->isSillyMileageChange($shift, $endMileage) && $explanation === null) {
+        if ($this->isSillyMileageChange($startMileage, $endMileage) && $explanation === null) {
             throw ValidationException::withMessages([
                 'mileageExplanation' => ['Enter a reason for the mileage change.'],
             ]);
         }
     }
 
-    private function isSillyMileageChange(OperationalShift $shift, int $endMileage): bool
+    private function isSillyMileageChange(int $startMileage, int $endMileage): bool
     {
-        return $endMileage - $shift->start_mileage >= self::SILLY_MILEAGE_THRESHOLD;
+        return $endMileage - $startMileage >= self::SILLY_MILEAGE_THRESHOLD;
     }
 
     private function storedMileageVarianceReason(Bike $bike, int $startMileage, ?string $reason): ?string

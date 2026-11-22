@@ -3,8 +3,10 @@
 namespace App\Http\Requests;
 
 use App\Enums\JobType;
-use App\Models\DeliveryJob;
+use App\Models\DeliveryLeg;
+use App\Models\DeliveryRequest;
 use App\Rules\FutureMilkCollection;
+use App\Services\Jobs\DeliveryJobService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class ScheduleDeliveryJobRequest extends FormRequest
@@ -28,8 +30,11 @@ class ScheduleDeliveryJobRequest extends FormRequest
      */
     public function rules(): array
     {
-        $job = $this->route('job');
-        $isMilk = $job instanceof DeliveryJob && $job->job_type === JobType::Milk;
+        $job = $this->resolvedJob();
+        $jobType = $job instanceof DeliveryRequest
+            ? $job->job_type
+            : $job->request?->job_type;
+        $isMilk = $jobType === JobType::Milk;
 
         return [
             'scheduledCollectionAt' => [
@@ -39,6 +44,16 @@ class ScheduleDeliveryJobRequest extends FormRequest
                 ...($isMilk ? [new FutureMilkCollection] : []),
             ],
         ];
+    }
+
+    private function resolvedJob(): DeliveryRequest|DeliveryLeg
+    {
+        $param = $this->route('job');
+        if ($param instanceof DeliveryRequest || $param instanceof DeliveryLeg) {
+            return $param;
+        }
+
+        return app(DeliveryJobService::class)->resolve((string) $param);
     }
 
     /**

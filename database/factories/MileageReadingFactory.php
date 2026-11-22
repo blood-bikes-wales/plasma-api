@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\MileageReadingKind;
 use App\Models\MileageReading;
 use App\Models\OperationalShift;
 use App\Models\User;
@@ -21,10 +22,25 @@ class MileageReadingFactory extends Factory
     {
         return [
             'operational_shift_id' => OperationalShift::factory(),
+            'kind' => MileageReadingKind::End,
             'mileage' => fake()->numberBetween(1_000, 50_000),
             'reason' => null,
             'recorded_at' => now(),
             'recorded_by_user_id' => User::factory(),
         ];
+    }
+
+    public function start(): static
+    {
+        return $this->state(fn (): array => [
+            'kind' => MileageReadingKind::Start,
+        ]);
+    }
+
+    public function end(): static
+    {
+        return $this->state(fn (): array => [
+            'kind' => MileageReadingKind::End,
+        ]);
     }
 }

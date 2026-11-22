@@ -13,7 +13,6 @@ use App\Http\Requests\RelayDeliveryJobRequest;
 use App\Http\Requests\ScheduleDeliveryJobRequest;
 use App\Http\Requests\StoreDeliveryJobRequest;
 use App\Http\Resources\DeliveryJobResource;
-use App\Models\DeliveryJob;
 use App\Models\User;
 use App\Services\Jobs\DeliveryJobService;
 use App\Services\Users\UserSettingsService;
@@ -38,7 +37,6 @@ class JobController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        // Only the Completed list is age-filtered, and only for users who have not asked for every job.
         $includeOlderCompleted = $jobScope !== JobScope::Completed
             || $this->settings->showCompletedJobs($user);
 
@@ -49,13 +47,9 @@ class JobController extends Controller
         ]);
     }
 
-    /**
-     * A job by id, whatever its age: the completed-job age filter never applies here, so a
-     * link to an old job keeps working.
-     */
-    public function show(DeliveryJob $job): JsonResponse
+    public function show(string $job): JsonResponse
     {
-        return (new DeliveryJobResource($this->jobs->find($job)))->response();
+        return (new DeliveryJobResource($this->jobs->resolve($job)))->response();
     }
 
     public function store(StoreDeliveryJobRequest $request): JsonResponse
@@ -63,34 +57,36 @@ class JobController extends Controller
         /** @var User $user */
         $user = $request->user();
 
-        $job = $this->jobs->create($user, $request->validated());
+        $created = $this->jobs->create($user, $request->validated());
 
-        return (new DeliveryJobResource($job))
+        return (new DeliveryJobResource($created))
             ->response()
             ->setStatusCode(201);
     }
 
-    public function schedule(ScheduleDeliveryJobRequest $request, DeliveryJob $job): JsonResponse
+    public function schedule(ScheduleDeliveryJobRequest $request, string $job): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        $updated = $this->jobs->schedule($user, $job, $request->validated());
+        $resolved = $this->jobs->resolve($job);
+        $updated = $this->jobs->schedule($user, $resolved, $request->validated());
 
         return (new DeliveryJobResource($updated))->response();
     }
 
-    public function relay(RelayDeliveryJobRequest $request, DeliveryJob $job): JsonResponse
+    public function relay(RelayDeliveryJobRequest $request, string $job): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        $updated = $this->jobs->relay($user, $job, $request->validated());
+        $resolved = $this->jobs->resolve($job);
+        $updated = $this->jobs->relay($user, $resolved, $request->validated());
 
         return (new DeliveryJobResource($updated))->response();
     }
 
-    public function action(Request $request, DeliveryJob $job, string $action): JsonResponse
+    public function action(Request $request, string $job, string $action): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
@@ -101,22 +97,24 @@ class JobController extends Controller
         }
 
         $validated = $this->validatedActionPayload($request, $jobAction);
+        $resolved = $this->jobs->resolve($job);
 
         $updated = match ($jobAction) {
-            JobAction::Allocate => $this->jobs->allocate($user, $job, $validated),
-            JobAction::Collect => $this->jobs->collect($user, $job, $validated),
-            JobAction::Deliver => $this->jobs->deliver($user, $job, $validated),
+            JobAction::Allocate => $this->jobs->allocate($user, $resolved, $validated),
+            JobAction::Collect => $this->jobs->collect($user, $resolved, $validated),
+            JobAction::Deliver => $this->jobs->deliver($user, $resolved, $validated),
         };
 
         return (new DeliveryJobResource($updated))->response();
     }
 
-    public function cancel(CancelDeliveryJobRequest $request, DeliveryJob $job): JsonResponse
+    public function cancel(CancelDeliveryJobRequest $request, string $job): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
-        $updated = $this->jobs->cancel($user, $job, $request->validated());
+        $resolved = $this->jobs->resolve($job);
+        $updated = $this->jobs->cancel($user, $resolved, $request->validated());
 
         return (new DeliveryJobResource($updated))->response();
     }

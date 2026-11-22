@@ -12,8 +12,8 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * One choice in the New Job "contents" list, managed by trustees.
  *
- * Jobs store the chosen name as plain text, so renaming or retiring an entry
- * never changes existing jobs or relay legs.
+ * Requests store content_type_id plus an immutable content_label_snapshot, so
+ * renaming or retiring an entry never changes existing jobs or relay legs.
  */
 #[Fillable([
     'name',

@@ -27,9 +27,9 @@ class ActiveShiftResource extends JsonResource
             'riderName' => $this->rider->name,
             'bikeId' => $this->bike_id,
             'bikeRegistration' => $this->bike?->registration,
-            'startMileage' => $this->start_mileage,
+            'startMileage' => $this->startMileage(),
             'startedAt' => $this->logged_on_at?->toIso8601String(),
-            'mileageVarianceReason' => $this->mileage_variance_reason,
+            'mileageVarianceReason' => $this->mileageVarianceReason(),
             'shiftType' => $this->shift_type,
         ];
     }

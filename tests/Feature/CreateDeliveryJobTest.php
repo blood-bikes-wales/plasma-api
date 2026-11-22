@@ -87,10 +87,12 @@ class CreateDeliveryJobTest extends TestCase
         $this->assertDatabaseHas('places', [
             'external_id' => 'ChIJCollectionPlaceId0001',
         ]);
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'reference' => 'JB-0001',
             'status' => JobStatus::New->value,
-            'sender_name' => 'Dr Patel',
+        ]);
+        $this->assertDatabaseHas('parties', [
+            'name' => 'Dr Patel',
         ]);
         $this->assertSame(1, DeliveryJob::query()->count());
     }
@@ -153,8 +155,8 @@ class CreateDeliveryJobTest extends TestCase
             ->assertOk();
 
         $this->assertSame(
-            ['Blood samples', 'Blood samples', 'Blood samples'],
-            DeliveryJob::query()->pluck('contents')->all(),
+            ['Blood samples', 'Blood samples'],
+            DeliveryJob::query()->with('request')->orderBy('leg_number')->get()->pluck('contents')->all(),
         );
     }
 
@@ -187,10 +189,12 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('jobType', 'standard')
             ->assertJsonPath('milkLitres', null);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_requests', [
             'reference' => 'JB-0001',
             'job_type' => 'standard',
-            'milk_litres' => null,
+        ]);
+        $this->assertDatabaseMissing('milk_job_details', [
+            'delivery_request_id' => DeliveryJob::query()->where('reference', 'JB-0001')->value('request_id'),
         ]);
     }
 
@@ -352,11 +356,9 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('mother.phone', '07700 900101')
             ->assertJsonPath('mother.secondaryPhone', '029 2018 0000');
 
-        $this->assertDatabaseHas('delivery_jobs', [
-            'reference' => 'JB-0001',
-            'mother_name' => 'Megan Evans',
-            'mother_phone' => '07700 900101',
-            'mother_phone_secondary' => '029 2018 0000',
+        $this->assertDatabaseHas('parties', [
+            'name' => 'Megan Evans',
+            'phone' => '07700 900101',
         ]);
     }
 
@@ -383,7 +385,7 @@ class CreateDeliveryJobTest extends TestCase
                 ->assertJsonPath('mother.secondaryPhone', null);
         }
 
-        $this->assertDatabaseMissing('delivery_jobs', ['mother_phone_secondary' => '']);
+        $this->assertDatabaseMissing('parties', ['phone_secondary' => '']);
     }
 
     public function test_an_admin_can_create_a_milk_job_and_sees_the_mothers_contact(): void
@@ -415,7 +417,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('needsMotherContact', true)
             ->assertJsonPath('scheduledCollectionAt', null);
 
-        $this->assertDatabaseHas('delivery_jobs', ['scheduled_collection_at' => null]);
+        $this->assertDatabaseHas('delivery_requests', ['scheduled_collection_at' => null]);
     }
 
     public function test_a_milk_job_can_be_created_already_scheduled_and_the_offset_is_normalised_to_utc(): void
@@ -447,7 +449,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonValidationErrors(['scheduledCollectionAt']);
 
-        $this->assertDatabaseCount('delivery_jobs', 0);
+        $this->assertDatabaseCount('delivery_legs', 0);
     }
 
     public function test_a_standard_job_never_needs_the_mother_to_be_called_and_may_carry_a_time(): void
@@ -594,7 +596,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('jobType', 'milk')
             ->assertJsonPath('isBereavement', true);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_requests', [
             'reference' => 'JB-0001',
             'job_type' => 'milk',
             'is_bereavement' => true,
@@ -635,7 +637,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('isBereavement', false);
 
-        $this->assertDatabaseHas('delivery_jobs', ['reference' => 'JB-0001', 'is_bereavement' => false]);
+        $this->assertDatabaseHas('delivery_requests', ['reference' => 'JB-0001', 'is_bereavement' => false]);
     }
 
     /**
@@ -663,7 +665,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('jobType', 'standard')
             ->assertJsonPath('isBereavement', false);
 
-        $this->assertDatabaseHas('delivery_jobs', ['reference' => 'JB-0001', 'is_bereavement' => false]);
+        $this->assertDatabaseHas('delivery_requests', ['reference' => 'JB-0001', 'is_bereavement' => false]);
     }
 
     public function test_an_explicit_false_on_a_standard_job_is_accepted(): void
@@ -797,11 +799,8 @@ class CreateDeliveryJobTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('mother', null);
 
-        $this->assertDatabaseHas('delivery_jobs', [
-            'reference' => 'JB-0001',
-            'mother_name' => null,
-            'mother_phone' => null,
-            'mother_phone_secondary' => null,
+        $this->assertDatabaseMissing('milk_job_details', [
+            'delivery_request_id' => DeliveryJob::query()->value('request_id'),
         ]);
     }
 
@@ -991,7 +990,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('collection.notes', 'path lab')
             ->assertJsonPath('delivery.notes', null);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'reference' => 'JB-0001',
             'collection_notes' => 'path lab',
             'delivery_notes' => null,
@@ -1101,7 +1100,7 @@ class CreateDeliveryJobTest extends TestCase
             ->assertJsonPath('estimatedCollectionAt', null)
             ->assertJsonPath('estimatedDeliveryAt', null);
 
-        $this->assertDatabaseHas('delivery_jobs', [
+        $this->assertDatabaseHas('delivery_legs', [
             'reference' => 'JB-0001',
             'estimated_collection_at' => null,
             'estimated_delivery_at' => null,

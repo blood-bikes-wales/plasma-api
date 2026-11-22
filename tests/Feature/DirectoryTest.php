@@ -4,7 +4,6 @@ namespace Tests\Feature;
 
 use App\Contracts\GoogleIdTokenVerifier;
 use App\Models\Bike;
-use App\Models\MileageReading;
 use App\Models\OperationalShift;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -138,14 +137,11 @@ class DirectoryTest extends TestCase
             'registration' => 'CF12 ABC',
             'initial_mileage' => 15300,
         ]);
-        $shift = OperationalShift::factory()->for($bike)->create([
-            'end_mileage' => 15300,
-        ]);
-        MileageReading::factory()->for($shift)->create([
-            'mileage' => 15300,
-            'reason' => 'Routine logoff',
-            'recorded_at' => now()->subHour(),
-        ]);
+        $shift = OperationalShift::factory()
+            ->for($bike)
+            ->withStartMileage(15250)
+            ->loggedOff(15300, 'Routine logoff')
+            ->create();
 
         $this->fakeDirectory([$this->riderVolunteer()]);
         $this->mockVerifiedClaims();
@@ -155,7 +151,7 @@ class DirectoryTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.registration', 'CF12 ABC')
             ->assertJsonPath('data.lastRecordedMileage', 15300)
-            ->assertJsonCount(1, 'data.mileageHistory')
+            ->assertJsonCount(2, 'data.mileageHistory')
             ->assertJsonPath('data.mileageHistory.0.mileage', 15300)
             ->assertJsonPath('data.mileageHistory.0.reason', 'Routine logoff')
             ->assertJsonPath('data.mileageHistory.0.shiftId', $shift->id);

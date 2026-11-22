@@ -256,33 +256,39 @@ class ScheduleDeliveryJobTest extends TestCase
         $this->withToken('valid-token')->postJson('/api/jobs/not-a-uuid/schedule', $body)->assertNotFound();
     }
 
-    public function test_scheduling_a_relay_hands_the_time_to_its_open_legs_only(): void
+    public function test_scheduling_a_relay_sets_the_shared_request_time_on_every_leg(): void
     {
-        $parent = DeliveryJob::factory()->milk()->create();
+        $seed = DeliveryJob::factory()->milk()->create();
+        $requestId = $seed->request_id;
         $legOne = DeliveryJob::factory()->milk()->collected()->create([
-            'parent_job_id' => $parent->id,
+            'request_id' => $requestId,
             'leg_number' => 1,
-            'scheduled_collection_at' => '2026-11-22 09:00:00',
         ]);
-        $legTwo = DeliveryJob::factory()->milk()->create(['parent_job_id' => $parent->id, 'leg_number' => 2]);
+        $legTwo = DeliveryJob::factory()->milk()->create([
+            'request_id' => $requestId,
+            'leg_number' => 2,
+        ]);
 
         $this->signInAs('Controller');
 
         $this->withToken('valid-token')
-            ->postJson("/api/jobs/{$parent->id}/schedule", ['scheduledCollectionAt' => '2026-11-27T10:00:00Z'])
+            ->postJson("/api/jobs/{$requestId}/schedule", ['scheduledCollectionAt' => '2026-11-27T10:00:00Z'])
             ->assertOk()
             ->assertJsonPath('needsMotherContact', false)
-            ->assertJsonPath('legs.1.scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
-            ->assertJsonPath('legs.0.scheduledCollectionAt', '2026-11-22T09:00:00+00:00');
+            ->assertJsonPath('scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
+            ->assertJsonPath('legs.0.scheduledCollectionAt', '2026-11-27T10:00:00+00:00')
+            ->assertJsonPath('legs.1.scheduledCollectionAt', '2026-11-27T10:00:00+00:00');
 
         $this->assertSame('2026-11-27 10:00:00', $legTwo->fresh()->scheduled_collection_at->format('Y-m-d H:i:s'));
-        $this->assertSame('2026-11-22 09:00:00', $legOne->fresh()->scheduled_collection_at->format('Y-m-d H:i:s'));
+        $this->assertSame('2026-11-27 10:00:00', $legOne->fresh()->scheduled_collection_at->format('Y-m-d H:i:s'));
     }
 
     public function test_a_relay_leg_cannot_be_scheduled_on_its_own(): void
     {
-        $parent = DeliveryJob::factory()->create();
-        $leg = DeliveryJob::factory()->create(['parent_job_id' => $parent->id, 'leg_number' => 1]);
+        $seed = DeliveryJob::factory()->create();
+        $requestId = $seed->request_id;
+        $leg = DeliveryJob::factory()->create(['request_id' => $requestId, 'leg_number' => 1]);
+        DeliveryJob::factory()->create(['request_id' => $requestId, 'leg_number' => 2]);
 
         $this->signInAs('Controller');
 

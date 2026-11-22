@@ -41,7 +41,10 @@ flowchart LR
   Shifts --> Duty[(operational_shifts)]
   Shifts --> Mileage[(mileage_readings)]
   Api --> Jobs[DeliveryJobService]
-  Jobs --> DeliveryJobs[(delivery_jobs)]
+  Jobs --> Requests[(delivery_requests)]
+  Jobs --> Legs[(delivery_legs)]
+  Jobs --> Parties[(parties)]
+  Jobs --> Milk[(milk_job_details)]
   Api --> Directory[VolunteerDirectoryService]
   Api --> BikeLog[BikeLogService]
   BikeLog --> Bikes
@@ -74,12 +77,13 @@ Local bypass: `AUTH_DISABLED` only when `APP_ENV` is `local` or `testing`.
 - `app/Services/Shifts/OperationalShiftService.php` — logon/logoff, one active shift per rider and bike, mileage history on logoff
 - `app/Services/Shifts/ShiftTypeResolver.php` — read-only Three Rings lookup of the rider's shift type at logon
 - `app/Services/Jobs/DeliveryJobService.php` — create, relay, allocate/collect/deliver/cancel; list active and completed top-level jobs
-- `app/Services/Jobs/RelayJobStatusAggregator.php` — derive parent relay status from leg progress
+- `app/Services/Jobs/RelayJobStatusAggregator.php` — derive request (relay) status from leg progress
 - `app/Services/Directory/VolunteerDirectoryService.php` — filter cached Three Rings volunteers by name, role, area
 - `app/Services/Bikes/BikeLogService.php` — search bikes by registration; load mileage history
 - `app/Http/Controllers/Api/DirectoryController.php` — directory HTTP surface (`view-directory`)
 - `app/Authorization/CapabilityMatrix.php` — which roles may use each named capability; admin is expanded in `Role::expand()`
-- `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, `delivery_jobs`, cache/jobs tables
+- `database/migrations/` — `users`, `auth_audit_logs`, `bikes`, `operational_shifts`, `mileage_readings`, `delivery_requests`, `delivery_legs`, `parties`, `milk_job_details`, cache/jobs tables
+- 5NF target schema (landed): [`docs/technical/5nf-target-schema.md`](5nf-target-schema.md)
 
 ## Current HTTP surface
 
