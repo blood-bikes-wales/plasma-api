@@ -78,6 +78,8 @@ class DeliveryJobResource extends JsonResource
             'estimatedDeliveryAt' => null,
             'plannedArrivalAt' => null,
             'scheduledCollectionAt' => $job->scheduled_collection_at?->toIso8601String(),
+            'recurrenceId' => $job->recurrence_id,
+            'occurrenceDate' => $job->occurrence_date?->toDateString(),
             'needsMotherContact' => $this->when(
                 RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
                 fn () => $job->needsMotherContact(),
@@ -145,6 +147,8 @@ class DeliveryJobResource extends JsonResource
             'estimatedDeliveryAt' => $leg->estimated_delivery_at?->toIso8601String(),
             'plannedArrivalAt' => $leg->planned_arrival_at?->toIso8601String(),
             'scheduledCollectionAt' => $deliveryRequest?->scheduled_collection_at?->toIso8601String(),
+            'recurrenceId' => $deliveryRequest?->recurrence_id,
+            'occurrenceDate' => $deliveryRequest?->occurrence_date?->toDateString(),
             'needsMotherContact' => $this->when(
                 RequestRoles::hasCapability($httpRequest, Capability::CreateJob),
                 fn () => $leg->needsMotherContact(),

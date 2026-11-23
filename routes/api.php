@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\BikeController;
 use App\Http\Controllers\Api\DirectoryController;
 use App\Http\Controllers\Api\JobContentTypeController;
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\JobRecurrenceController;
 use App\Http\Controllers\Api\MeController;
 use App\Http\Controllers\Api\PostcodeAreaController;
 use App\Http\Controllers\Api\ServiceAreaController;
@@ -58,6 +59,11 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
         Route::get('/jobs/{job}', [JobController::class, 'show'])
             ->whereUuid('job')
             ->name('jobs.show');
+        Route::get('/job-recurrences', [JobRecurrenceController::class, 'index'])
+            ->name('job-recurrences.index');
+        Route::get('/job-recurrences/{jobRecurrence}', [JobRecurrenceController::class, 'show'])
+            ->whereUuid('jobRecurrence')
+            ->name('job-recurrences.show');
     });
 
     Route::middleware('access:view-directory')->group(function () {
@@ -80,6 +86,20 @@ Route::middleware(['auth.google', 'roles'])->group(function () {
             ->whereUuid('job')
             ->name('jobs.schedule');
         Route::post('/jobs/{job}/cancel', [JobController::class, 'cancel'])->name('jobs.cancel');
+        Route::post('/job-recurrences', [JobRecurrenceController::class, 'store'])
+            ->name('job-recurrences.store');
+        Route::patch('/job-recurrences/{jobRecurrence}', [JobRecurrenceController::class, 'update'])
+            ->whereUuid('jobRecurrence')
+            ->name('job-recurrences.update');
+        Route::post('/job-recurrences/{jobRecurrence}/pause', [JobRecurrenceController::class, 'pause'])
+            ->whereUuid('jobRecurrence')
+            ->name('job-recurrences.pause');
+        Route::post('/job-recurrences/{jobRecurrence}/resume', [JobRecurrenceController::class, 'resume'])
+            ->whereUuid('jobRecurrence')
+            ->name('job-recurrences.resume');
+        Route::delete('/job-recurrences/{jobRecurrence}', [JobRecurrenceController::class, 'destroy'])
+            ->whereUuid('jobRecurrence')
+            ->name('job-recurrences.destroy');
     });
 
     Route::middleware('access:view-postcode-areas')->group(function () {
