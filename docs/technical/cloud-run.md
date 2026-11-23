@@ -116,6 +116,18 @@ If a deploy ships code before migrations finish, re-run:
 gcloud run jobs execute plasma-api-migrate --region=europe-west2 --wait
 ```
 
+## Scheduled tasks (follow-up)
+
+Laravel registers `jobs:materialize-recurrences` hourly in `bootstrap/app.php`, but Cloud Run does not run `schedule:run` today. Until a worker exists, recurrence create/update/resume still materializes the rolling horizon in-request.
+
+**Recommended follow-up:** Cloud Scheduler → Cloud Run **Job** (same image as migrate) that executes:
+
+```bash
+php artisan jobs:materialize-recurrences
+```
+
+Mirror `plasma-api-migrate` (region `europe-west2`, Cloud SQL attachment, secrets). Hourly is enough for a 14-day horizon.
+
 ## Related
 
 - [GCP hosting](gcp-hosting.md) — options comparison; this repo implements Cloud Run + Cloud SQL

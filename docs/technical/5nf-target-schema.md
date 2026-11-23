@@ -120,6 +120,10 @@ Same shape as today’s pivot; FK target becomes `delivery_requests.id` instead 
 | `operational_shift_id` / `allocated_at` / collect / deliver / cancel fields | `delivery_legs` |
 | `parent_job_id` / `leg_number` | `request_id` / `leg_number` (always set) |
 
+### Recurring series (landed)
+
+Predicate split: `job_recurrences` is the series template (schedule + blueprint FKs to `parties` / `places` / content); `milk_recurrence_details` is the milk subtype; `job_recurrence_service_areas` is the M:N pivot. Materialized occurrences are ordinary `delivery_requests` with `recurrence_id` + `occurrence_date` (unique together) and a single `delivery_legs` hop. Artisan `jobs:materialize-recurrences` tops up the rolling horizon.
+
 ## 2. Parties and milk subtype
 
 ### `parties`

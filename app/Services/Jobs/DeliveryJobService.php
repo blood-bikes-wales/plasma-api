@@ -67,22 +67,40 @@ final class DeliveryJobService
      */
     public function create(User $actor, array $payload): DeliveryLeg
     {
-        return DB::transaction(function () use ($actor, $payload): DeliveryLeg {
+        return $this->createFromBlueprint($actor, $payload);
+    }
+
+    /**
+     * Shared create path for one-off jobs and recurrence materialization.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  array{recurrenceId: string, occurrenceDate: string, senderPartyId?: string, motherPartyId?: string, collectionPlaceId?: string, deliveryPlaceId?: string}|null  $occurrence
+     */
+    public function createFromBlueprint(User $actor, array $payload, ?array $occurrence = null): DeliveryLeg
+    {
+        return DB::transaction(function () use ($actor, $payload, $occurrence): DeliveryLeg {
             $sender = $payload['sender'];
             $collection = $payload['collection'];
             $delivery = $payload['delivery'];
 
-            $collectionPlace = $this->upsertPlace($collection);
-            $deliveryPlace = $this->upsertPlace($delivery);
+            $collectionPlace = isset($occurrence['collectionPlaceId'])
+                ? Place::query()->findOrFail($occurrence['collectionPlaceId'])
+                : $this->upsertPlace($collection);
+            $deliveryPlace = isset($occurrence['deliveryPlaceId'])
+                ? Place::query()->findOrFail($occurrence['deliveryPlaceId'])
+                : $this->upsertPlace($delivery);
 
             $jobType = JobType::tryFrom((string) ($payload['jobType'] ?? '')) ?? JobType::Standard;
             $mother = $jobType === JobType::Milk ? ($payload['mother'] ?? null) : null;
 
-            $senderParty = Party::query()->create([
-                'name' => $sender['name'],
-                'phone' => $sender['phone'],
-                'organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
-            ]);
+            $senderPartyId = $occurrence['senderPartyId'] ?? null;
+            if ($senderPartyId === null) {
+                $senderPartyId = Party::query()->create([
+                    'name' => $sender['name'],
+                    'phone' => $sender['phone'],
+                    'organisation' => $this->normaliseOptionalText($sender['organisation'] ?? null),
+                ])->id;
+            }
 
             $contents = (string) $payload['contents'];
             $contentTypeId = JobContentType::query()
@@ -98,24 +116,29 @@ final class DeliveryJobService
                 'status' => JobStatus::New,
                 'job_type' => $jobType,
                 'is_bereavement' => $jobType === JobType::Milk && filter_var($payload['isBereavement'] ?? false, FILTER_VALIDATE_BOOLEAN),
-                'sender_party_id' => $senderParty->id,
+                'sender_party_id' => $senderPartyId,
                 'content_type_id' => $contentTypeId,
                 'content_label_snapshot' => $contents,
                 'scheduled_collection_at' => $this->parseTimestamp($payload['scheduledCollectionAt'] ?? null),
                 'created_by_user_id' => $actor->id,
+                'recurrence_id' => $occurrence['recurrenceId'] ?? null,
+                'occurrence_date' => $occurrence['occurrenceDate'] ?? null,
             ]);
 
             if ($jobType === JobType::Milk) {
-                $motherParty = Party::query()->create([
-                    'name' => $this->normaliseOptionalText($mother['name'] ?? null) ?? 'Unknown',
-                    'phone' => $this->normaliseOptionalText($mother['phone'] ?? null) ?? '',
-                    'phone_secondary' => $this->normaliseOptionalText($mother['secondaryPhone'] ?? null),
-                ]);
+                $motherPartyId = $occurrence['motherPartyId'] ?? null;
+                if ($motherPartyId === null) {
+                    $motherPartyId = Party::query()->create([
+                        'name' => $this->normaliseOptionalText($mother['name'] ?? null) ?? 'Unknown',
+                        'phone' => $this->normaliseOptionalText($mother['phone'] ?? null) ?? '',
+                        'phone_secondary' => $this->normaliseOptionalText($mother['secondaryPhone'] ?? null),
+                    ])->id;
+                }
 
                 MilkJobDetail::query()->create([
                     'delivery_request_id' => $request->id,
                     'milk_litres' => $payload['milkLitres'],
-                    'mother_party_id' => $motherParty->id,
+                    'mother_party_id' => $motherPartyId,
                 ]);
             }
 
@@ -139,6 +162,7 @@ final class DeliveryJobService
                 'job_id' => $leg->id,
                 'reference' => $reference,
                 'user_id' => $actor->id,
+                'recurrence_id' => $occurrence['recurrenceId'] ?? null,
             ]);
 
             return $this->loadLeg($leg);
@@ -461,7 +485,10 @@ final class DeliveryJobService
     /**
      * @param  array<string, mixed>  $location
      */
-    private function upsertPlace(array $location): Place
+    /**
+     * @param  array<string, mixed>  $location
+     */
+    public function upsertPlace(array $location): Place
     {
         $place = Place::query()->where('external_id', $location['placeId'])->first();
         $postcode = $location['postcode'] ?? null;
@@ -495,7 +522,7 @@ final class DeliveryJobService
      * @param  list<string>  $codes
      * @return list<string>
      */
-    private function serviceAreaIds(array $codes): array
+    public function serviceAreaIds(array $codes): array
     {
         $normalized = array_map(
             static fn (string $code): string => strtoupper($code),

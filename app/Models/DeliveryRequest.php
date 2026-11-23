@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'content_label_snapshot',
     'scheduled_collection_at',
     'created_by_user_id',
+    'recurrence_id',
+    'occurrence_date',
 ])]
 class DeliveryRequest extends Model
 {
@@ -52,6 +54,7 @@ class DeliveryRequest extends Model
             'job_type' => JobType::class,
             'is_bereavement' => 'boolean',
             'scheduled_collection_at' => 'datetime',
+            'occurrence_date' => 'date',
         ];
     }
 
@@ -61,6 +64,14 @@ class DeliveryRequest extends Model
     public function senderParty(): BelongsTo
     {
         return $this->belongsTo(Party::class, 'sender_party_id');
+    }
+
+    /**
+     * @return BelongsTo<JobRecurrence, $this>
+     */
+    public function recurrence(): BelongsTo
+    {
+        return $this->belongsTo(JobRecurrence::class, 'recurrence_id');
     }
 
     /**

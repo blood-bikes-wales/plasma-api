@@ -117,6 +117,16 @@ Do not document routes that are not registered.
 | POST | `/api/jobs/{id}/actions/collect` | `auth.google` + controller (`create-job`) | Allocated → Collected; body `{ contentsConfirmed, receiptNumber, collectedAt? }` |
 | POST | `/api/jobs/{id}/actions/deliver` | `auth.google` + controller (`create-job`) | Collected → Delivered; body `{ recipient, noRecipient?, deliveredAt? }`; `recipient` is required unless `noRecipient` is true, in which case it is ignored and stored as null |
 | POST | `/api/jobs/{id}/cancel` | `auth.google` + controller (`create-job`) | Cancel job (or relay parent + open legs); body `{ reason? }` |
+| POST | `/api/jobs/{id}/schedule` | `auth.google` + controller (`create-job`) | Set `scheduledCollectionAt` on a New or Allocated request (relay: parent only) |
+| GET | `/api/job-recurrences` | `auth.google` + `view-jobs` | `{ "data": [ JobRecurrence, … ] }`; optional `?active=true\|false` |
+| GET | `/api/job-recurrences/{id}` | `auth.google` + `view-jobs` | One series with recent/upcoming occurrence summaries |
+| POST | `/api/job-recurrences` | `auth.google` + controller (`create-job`) | Create series template + materialize horizon of New jobs; 201 |
+| PATCH | `/api/job-recurrences/{id}` | `auth.google` + controller (`create-job`) | Update blueprint/schedule; rebuild future New occurrences |
+| POST | `/api/job-recurrences/{id}/pause` | `auth.google` + controller (`create-job`) | Stop creating new occurrences |
+| POST | `/api/job-recurrences/{id}/resume` | `auth.google` + controller (`create-job`) | Resume + top up horizon |
+| DELETE | `/api/job-recurrences/{id}` | `auth.google` + controller (`create-job`) | Soft-stop: pause + cancel future New occurrences |
+
+Delivery job JSON also exposes `recurrenceId` and `occurrenceDate` when the request belongs to a series.
 
 ## Persistence and caching
 
